@@ -1,0 +1,132 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10.2"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "gnssLab",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "coord_myself::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-coord_myself-Debug-8fce596ae6337db8b53b.json",
+					"name" : "coord_myself",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "eigen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-eigen-Debug-8481c3d814cc6f4f51ce.json",
+					"name" : "eigen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "gnss::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-gnss-Debug-646465156ab8d3f8110a.json",
+					"name" : "gnss",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "gps_eph::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-gps_eph-Debug-c0fa3b901b1a70b94621.json",
+					"name" : "gps_eph",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "parse_config::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-parse_config-Debug-7cde3429bff99386e9d5.json",
+					"name" : "parse_config",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "parse_opt::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-parse_opt-Debug-98065c20829507ecf203.json",
+					"name" : "parse_opt",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "read_rinex_data::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-read_rinex_data-Debug-2dc7f02c3f2fa5fc493f.json",
+					"name" : "read_rinex_data",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "satid::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-satid-Debug-006c82d3bfa04b427fd3.json",
+					"name" : "satid",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "time_convert::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-time_convert-Debug-207c19e4efb16d1db2a0.json",
+					"name" : "time_convert",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/zhang/Documents/\u5927\u5b66\u8bfe\u7a0b/\u5927\u4e8c\u7b2c\u4e8c\u5b66\u671f\u8bfe\u7a0b/\u536b\u661f\u7b97\u6cd5/gnssLab-2.4/cmake-build-debug",
+		"source" : "/home/zhang/Documents/\u5927\u5b66\u8bfe\u7a0b/\u5927\u4e8c\u7b2c\u4e8c\u5b66\u671f\u8bfe\u7a0b/\u536b\u661f\u7b97\u6cd5/gnssLab-2.4"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 8
+	}
+}
