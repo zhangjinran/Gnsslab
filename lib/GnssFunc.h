@@ -72,11 +72,15 @@ double varOfMW(string,
 //================
 // 系统误差相关函数
 //================
-std::map<SatID,Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore);
+std::map<SatID,Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int IF);
 Xvt computeAtTransmitTime(const CommonTime& tr,
                           const double& pr,
                           const SatID& sat,
-                          RinexNavStore& navStore);
+                          RinexNavStore& navStore,int IF=0);
+
+double codeSelectFrequency(string code);
+
+void correctTGD(Xvt& xvt,SatID sat_id,CommonTime time,int IF,RinexNavStore& navStore);
 
 void computeElevAzim(Eigen::Vector3d& xyz,
                      std::map<SatID,Xvt> & satXvtTransTime,
@@ -88,8 +92,21 @@ std::map<SatID,Xvt> earthRotation(Eigen::Vector3d& xyz,
 
 // todo
 // ===========
-// computeIonoDelay();
-// computeTropDelay();
+
+double klobucharIonosphericCorrection(Vector3d geoUser,
+                                      double elev,
+                                      double azim,
+                                      double alpha[4],
+                                      double beta[4],
+                                      double tow,
+                                      SatID satSystem,
+                                      double freq);
+std::map<SatID,double> ionoDelay(Vector3d& xyz, CommonTime& epoch, std::map<SatID,
+double>& satElevData, std::map<SatID, double>& satAzimData,RinexNavStore& navStore);
+
+
+double saastamoinenTroposphericCorrection(Vector3d geoUser, double elev,SatID sat_id, double RH = 0.7);
+std::map<SatID,double> tropDelay(Vector3d& xyz, std::map<SatID, double>&satElevData,double RH = 0.7);
 //================
 
 void detectCSMW(ObsData &obsData,

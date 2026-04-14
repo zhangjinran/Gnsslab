@@ -63,6 +63,7 @@ int main() {
     RinexNavStore navStore;
     navStore.loadFile(navFile);
 
+
     cout << "after NavStore" << endl;
 
     std::map<string, std::set<string>> selectedTypes;
@@ -86,7 +87,7 @@ int main() {
 
         try {
             roverData = readObsRover.parseRinexObs();
-            cout << "roverData:" << roverData << endl;
+            //cout << "roverData:" << roverData << endl;
         }
         catch (EndOfFile &e) { break; }
 
@@ -97,18 +98,30 @@ int main() {
         //----------------------
         convertObsType(roverData);
 
-        if (debug) {
-            cout << "after convertObsType" << endl;
-            cout << roverData << endl;
-        }
+        // if (debug) {
+        //     cout << "after convertObsType" << endl;
+        //     cout << roverData << endl;
+        // }
 
         // 计算发射时刻卫星位置（参考框架为时刻的）
-        std::map<SatID, Xvt> satXvtTransTime = computeSatPos(roverData, navStore);
+        std::map<SatID, Xvt> satXvtTransTime = computeSatPos(roverData, navStore,0);
+        std::map<SatID, Xvt> satXvtTransTimeIF = computeSatPos(roverData, navStore,1);
+
         if (debug) {
-            cout << "satXvtTransTime" << CommonTime2CivilTime(roverData.epoch) << endl;
+            cout << "satXvtTransTime  " << CommonTime2CivilTime(roverData.epoch) << endl;
+
             for (auto sx: satXvtTransTime) {
-                cout << sx.first << endl;
-                cout << sx.second << endl;
+                if (sx.first.toString()=="G10") {
+                    cout << sx.first << endl;
+                    cout << sx.second << endl;
+                }
+            };
+            cout << "satXvtTransTimeIF  " << CommonTime2CivilTime(roverData.epoch) << endl;
+            for (auto sx: satXvtTransTimeIF) {
+                if (sx.first.toString()=="G10") {
+                    cout << sx.first << endl;
+                    cout << sx.second << endl;
+                }
             };
         }
 
@@ -124,8 +137,10 @@ int main() {
         if (debug) {
             cout << "satXvtRecTime" << endl;
             for (auto sx: satXvtRecTime) {
-                cout << sx.first << " xvt:" << endl;
-                cout << sx.second << endl;
+                if (sx.first.toString()=="G10") {
+                    cout << sx.first << " xvt:" << endl;
+                    cout << sx.second << endl;
+                }
             };
         }
 
@@ -134,19 +149,24 @@ int main() {
         if (std::abs(xyz.norm() - RadiusEarth) < 100000.0) {
             satElevData.clear();
             satAzimData.clear();
-            if (debug)
-                cout << "computeElevAzim" << endl;
+            // if (debug)
+            //     cout << "computeElevAzim" << endl;
 
             computeElevAzim(xyz, satXvtRecTime, satElevData, satAzimData);
 
-            if (debug) {
-                cout << "satElevData:" << endl;
-                cout << satElevData << endl;
-            }
+            // if (debug) {
+            //     cout << "satElevData:" << endl;
+            //     cout << satElevData << endl;
+            //     cout << "satAzimData:" << endl;
+            //     cout << satAzimData << endl;
+            // }
+
 
             // todo:
-            // computeIonoDelay();
-            // computeTropDealy();
+
+            ionoDelay(xyz, epoch, satElevData, satAzimData,navStore);
+            tropDelay(xyz,satElevData,0.5);
+            cout<<"epoch:"<<epoch<<endl;
         }
 
         // 调试代码时，设置一个stopEpoch，有助于快速得到结果
@@ -156,5 +176,5 @@ int main() {
 
     roverObsStream.close();
 
-}
+};
 

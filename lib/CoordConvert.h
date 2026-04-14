@@ -127,8 +127,8 @@ noexcept(false)
     WGS84 wgs84;
     refBLH = xyz2blh(refXYZ, wgs84);
 
-    if(debug)
-        cout << "refBLH:" << refBLH.transpose() << endl;
+    if(debug){}
+        //cout << "refBLH:" << refBLH.transpose() << endl;
 
     double lat = refBLH.B();
     double lon = refBLH.L();
@@ -156,12 +156,12 @@ noexcept(false)
     // Let's get cos(z), being z the angle with respect to local vertical (Up);
     cosUp = localUp/z.norm();
 
-    if(debug)
-        cout << "cosUp:" << cosUp << endl;
+    if(debug){}
+        //cout << "cosUp:" << cosUp << endl;
 
     double elev = 90.0 - ((::acos(cosUp))*RAD_TO_DEG);
-    if(debug)
-        cout << "elev:"<<  elev << endl;
+    if(debug){}
+        //cout << "elev:"<<  elev << endl;
 
     return elev;
 }

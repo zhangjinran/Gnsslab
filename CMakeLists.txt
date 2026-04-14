@@ -96,8 +96,8 @@ target_link_libraries(read_rinex_data gnss)
 add_executable(gps_eph examples/exam-4.1-gps_eph.cpp)
 target_link_libraries(gps_eph gnss ${PCL_LIBRARIES})
 #
-#add_executable(system_bias examples/exam-5.1-system_bias.cpp)
-#target_link_libraries(system_bias gnss)
+add_executable(system_bias examples/exam-5.1-system_bias.cpp)
+target_link_libraries(system_bias gnss)
 #
 #add_executable(sppif examples/exam-6.1-sppif.cpp)
 #target_link_libraries(sppif gnss)

@@ -26,71 +26,66 @@
 
 #define debug 0
 void RinexObsReader::parseRinexHeader() {
-
     double version;
     XYZ antennaPosition;
     string satSys;
+    int numObs = 0;
     std::map<string, std::vector<string>> mapObsTypes;
+
     while (true) {
         string line;
-        getline(*pFileStream, line);
+        if (!getline(*pFileStream, line)) break;
 
-        //cout << "parseRinexHeader:" << line << endl;
-
-        string label;
-        label = strip(line.substr(60, 20));
-
-        if(debug)
-            cout << "label:" << label << endl;
+        string label = strip(line.substr(60, 20));
+        if (debug) cout << "label: " << label << endl;
 
         if (label == "END OF HEADER") {
             break;
         }
         else if (label == "MARKER NAME") {
             string markerName = strip(line.substr(0, 60));
-            std::replace(markerName.begin(), markerName.end(), ' ', '_');
-            rinexHeader.station = strip(markerName);
-            cout << "markerName:" << markerName << endl;
+            replace(markerName.begin(), markerName.end(), ' ', '_');
+            rinexHeader.station = markerName;
         }
         else if (label == "RINEX VERSION / TYPE") {
             version = safeStod(line.substr(0, 20));
-            if (version != 3.04) {
-                cerr << "only support rinex 3.04 version!" << endl;
+            // 支持 3.04 / 3.05
+            if (version < 3.04 || version > 3.05) {
+                cerr << "Error: Only RINEX 3.04 / 3.05 supported!" << endl;
                 exit(-1);
             }
             rinexHeader.version = version;
         }
         else if (label == "APPROX POSITION XYZ") {
-            antennaPosition[0] = safeStod(line.substr(0, 14));
-            antennaPosition[1] = safeStod(line.substr(14, 14));
-            antennaPosition[2] = safeStod(line.substr(28, 14));
+            antennaPosition[0] = safeStod(line.substr(0,14));
+            antennaPosition[1] = safeStod(line.substr(14,14));
+            antennaPosition[2] = safeStod(line.substr(28,14));
             rinexHeader.antennaPosition = antennaPosition;
         }
         else if (label == "SYS / # / OBS TYPES") {
-            string sysStr;
-            sysStr = line.substr(0, 1);
-            strip(sysStr);
-
-            int numObs;
-
-            if (sysStr != "") {
+            string sysStr = strip(line.substr(0, 1));
+            if (!sysStr.empty()) {
                 numObs = safeStoi(line.substr(3, 3));
                 satSys = sysStr;
+                mapObsTypes[satSys].clear();
             }
-
-            if(debug)
-                cout << "numObs:" << numObs << endl;
-
-            const int maxObsPerLine = 13;
-            for (int i = 0; i < maxObsPerLine && mapObsTypes[satSys].size() < numObs; i++) {
-                std::string typeStr = (line.substr(4 * i + 7, 3));
-                // insert into mapObsTypes
-                mapObsTypes[satSys].push_back(typeStr);
+            // 支持跨行、读满 numObs（适配3.05多类型）
+            while (mapObsTypes[satSys].size() < numObs) {
+                int base = 7 ;
+                for (int i=0; i<13 && mapObsTypes[satSys].size()<numObs; i++) {
+                    string ty = strip(line.substr(base + i*4, 3));
+                    if (!ty.empty()) mapObsTypes[satSys].push_back(ty);
+                }
+                if (mapObsTypes[satSys].size() < numObs) {
+                    if (!getline(*pFileStream, line)) break;
+                }
             }
             rinexHeader.mapObsTypes = mapObsTypes;
         }
+        // 可继续添加 3.05 新增头字段解析...
     }
 };
+
 
 ObsData RinexObsReader::parseRinexObs() {
 

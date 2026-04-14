@@ -24,7 +24,8 @@
 #include "ARLambda.hpp"
 #include "CoordConvert.h"
 #include "RinexNavStore.hpp"
-
+#include"CoordConvert.h"
+#include"CoordStruct.h"
 #define debug 1
 #define debugCSMW 1
 
@@ -330,48 +331,99 @@ void convertObsType(ObsData &obsData) {
     obsData.satTypeValueData = stvData;
 };
 
-std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore) {
+std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int IF=0) {
     std::map<SatID, Xvt> satXvtData;
     SatIDSet satRejectedSet;
     CommonTime time = obsData.epoch;
     // Loop through all the satellites
-    for (auto stv: obsData.satTypeValueData) {
-        SatID sat(stv.first);
-        Xvt xvt;
-        // compute satellite ephemeris at transmitting time
-        // Scalar to hold temporal value
-        double obs(0.0);
-        string codeType;
-        if (sat.system == "G") {
-            codeType = "C1";
-        }
-            // todo
-            // 请增加bds或其他系统的观测值选择
-        else {
-            satRejectedSet.insert(sat);
-            continue;
-        }
 
-        // code obs
-        try {
-            obs = stv.second.at(codeType);
-            if(debug)
-                cout << "sat:" << sat << "obs:" << codeType << "value:" << obs << endl;
-        }
-        catch (...) {
-            satRejectedSet.insert(sat);
-            continue;
-        }
+        for (auto stv: obsData.satTypeValueData) {
+            SatID sat(stv.first);
+            Xvt xvt;
+            // compute satellite ephemeris at transmitting time
+            // Scalar to hold temporal value
+            double obs(0.0);
+            string codeType;
+            if (!IF)
+                {
+                if (sat.system == "G")
+                    {
+                    codeType = "C1";
+                    }
+                else if (sat.system == "C")
+                    {
+                    codeType = "C2";
+                    }
+                // todo
+                // 请增加bds或其他系统的观测值选择
+                else
+                    {
+                    satRejectedSet.insert(sat);
+                    continue;
+                    }
+                try
+                    {
+                    obs = stv.second.at(codeType);
+                    if(debug)
+                        cout << "sat:" << sat << " obs:" << codeType << " value:" << obs << endl;
+                    }
+                catch (...)
+                    {
+                    satRejectedSet.insert(sat);
+                    continue;
+                    }
+            }
+            else {
+                string name_basic_string[]={"C1","C2","C5","C6","C7"};
+                map<string,array<double,2>> select_code;
+                int count=0;
 
-        // now, compute xvt
-        try {
-            xvt = computeAtTransmitTime(time, obs, sat, navStore);
-        }
-        catch (InvalidRequest &e) {
-            satRejectedSet.insert(sat);
-            continue;
-        }
-        satXvtData[sat] = xvt;
+                if (sat.system == "G"||sat.system=="C")
+                    {
+
+                        for (auto x:name_basic_string) {
+                            if (count==2)
+                                break;
+                            try {
+                                obs=stv.second.at(x);
+                                select_code[x][0]=obs;
+                                select_code[x][1]=pow(codeSelectFrequency(x),2);
+                                count+=1;
+                            }
+                            catch (...) {
+
+                            }
+                        }
+
+
+                    }
+                else {
+                    satRejectedSet.insert(sat);
+                    continue;
+                }
+                if (count!=2) {
+                    satRejectedSet.insert(sat);
+                    continue;
+                }
+                auto fCode=select_code.begin();
+                auto temp=fCode;
+                auto lCode=++temp;
+                obs=(fCode->second[0]*fCode->second[1]-lCode->second[0]*lCode->second[1])/(fCode->second[1]-lCode->second[1]);
+            }
+
+            // code obs
+
+
+            // now, compute xvt
+            try {
+                xvt = computeAtTransmitTime(time, obs, sat, navStore,IF);
+            }
+            catch (InvalidRequest &e) {
+                satRejectedSet.insert(sat);
+                continue;
+            }
+            satXvtData[sat] = xvt;
+
     }
 
     // remove bad sat;
@@ -383,26 +435,84 @@ std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore) {
 
 };
 
+
+
 Xvt computeAtTransmitTime(const CommonTime &tr,
                           const double &pr,
                           const SatID &sat,
-                          RinexNavStore& navStore)
+                          RinexNavStore& navStore,int IF)
 noexcept(false) {
     Xvt xvt;
     CommonTime tt;
     CommonTime transmit = tr;
+    //cout<<"tr"<<tr<<endl;
 
     transmit -= pr / C_MPS;
     tt = transmit;
+    //存储数据
+
+
 
     // 这里也可以用while循环来替换这里的迭代次数
     for (int i = 0; i < 2; i++) {
         xvt = navStore.getXvt(sat, tt);
+        //cout << xvt << endl;
         tt = transmit;
+        //cout<<"tt:"<<tt<<endl;
+        correctTGD(xvt,sat,tt,IF,navStore);
         tt -= (xvt.clkbias + xvt.relcorr);
+
     }
     return xvt;
 };
+
+double codeSelectFrequency(string  code) {
+    if (code == "C1")
+        return L1_FREQ_BDS;
+    else if (code == "C2")
+        return L2_FREQ_BDS;
+    else if (code == "C5")
+        return L5_FREQ_BDS;
+    else if (code == "C6")
+        return L6_FREQ_BDS;
+    else if (code == "C7")
+        return L7_FREQ_BDS;
+    else {
+        cout<<"No selective frequency for this code!!!"<<endl;
+        exit(-1);
+
+
+    }
+
+}
+
+void correctTGD(Xvt& xvt, SatID sat, CommonTime epoch,int IF,RinexNavStore& navStore) {
+    if (IF) {
+        cout<<"correctTGD function don't support processing IF_group!!!"<<endl;
+    }
+    else {
+        if (sat.system == "G") {
+            NavEphGPS nav_eph_gps=navStore.findGPSEph(sat,epoch);
+            xvt.clkbias-=nav_eph_gps.TGD;
+        }
+        else if (sat.system == "C") {
+            convertTimeSystem(epoch,TimeSystem::BDT);
+            //cout<<"epoch:"<<epoch<<endl;
+            NavEphBDS nav_eph_bds=navStore.findBDSEph(sat,epoch);
+            double TGD1=nav_eph_bds.TGD1;
+            //cout<<"TGD1:"<<TGD1<<endl;
+            double TGD2=nav_eph_bds.TGD2;
+            //cout<<"TGD2:"<<TGD2<<endl;
+
+            double L1_2=pow(L1_FREQ_BDS,2);
+            double L2_2=pow(L2_FREQ_BDS,2);
+            xvt.clkbias+=L1_2*(TGD1-TGD2)/(L1_2-L2_2);
+        }
+        else {
+            cout<<"correctTGD function don't support processing other system except GPS and BDT!!!"<<endl;
+        }
+    }
+}
 
 std::map<SatID, Xvt> earthRotation(Eigen::Vector3d &xyz,
                                    std::map<SatID, Xvt> &satXvtTransTime) {
@@ -482,6 +592,355 @@ void computeElevAzim(Eigen::Vector3d& xyz,
         tempAzimData[sat] = azim;
     }
 };
+std::map<SatID, double> ionoDelay(Vector3d& xyz,
+                                  CommonTime& epoch,
+                                  std::map<SatID, double>& satElevData,
+                                  std::map<SatID, double>& satAzimData,
+                                  RinexNavStore& navStore)
+{
+    std::map<SatID, double> ionoDelay;
+    double ionodelay(0.0);
+
+    for (auto& it : satElevData)
+    {
+        auto temp = navStore.ionoCorrData.begin();
+
+        double alpha[4] = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
+        temp++;
+        double beta[4]  = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
+
+        if (it.first.system == "G")
+        {
+            GPSWeekSecond gps_week_second;
+            CommonTime2WeekSecond(epoch, gps_week_second);
+            ionodelay = klobucharIonosphericCorrection(xyz,
+                                                      satElevData[it.first],
+                                                      satAzimData[it.first],
+                                                      alpha,
+                                                      beta,
+                                                      gps_week_second.getSOW(),
+                                                      it.first,
+                                                      L1_FREQ_GPS);
+        }
+        else if (it.first.system == "C")
+        {
+            BDTWeekSecond bdt_week_second;
+            CommonTime epoch_temp = epoch;
+            convertTimeSystem(epoch_temp, TimeSystem::BDT);
+            CommonTime2WeekSecond(epoch_temp, bdt_week_second);
+            ionodelay = klobucharIonosphericCorrection(xyz,
+                                                      satElevData[it.first],
+                                                      satAzimData[it.first],
+                                                      alpha,
+                                                      beta,
+                                                      bdt_week_second.getSOW(),
+                                                      it.first,
+                                                      L2_FREQ_BDS);
+        }
+        else
+        {
+            cout << "Unknown system " << it.first.system << endl;
+            continue;
+        }
+
+        ionoDelay[it.first] = ionodelay;
+    }
+
+    return ionoDelay;
+}
+
+// double ionoCorrection4Params(Vector3d geoUser,
+//                              double elev,
+//                              double azim,
+//                              std::vector<double>& ionoParams,  // 只有4个！
+//                              double tow,
+//                              std::string satSystem,
+//                              double freq)
+// {
+//     // 必须 4 个参数
+//     if (ionoParams.size() < 4) {
+//         return 0.0;
+//     }
+//
+//     double a0 = ionoParams[0];
+//     double a1 = ionoParams[1];
+//     double a2 = ionoParams[2];
+//     double a3 = ionoParams[3];
+//
+//     // 角度转弧度（和你原来完全一样）
+//     double latUser = geoUser(0) * PI / 180.0;
+//     double lonUser = geoUser(1) * PI / 180.0;
+//     double E = elev * PI / 180.0;
+//
+//     // 倾斜映射函数
+//     double map = 1.0 / (sin(E) + 0.123);
+//
+//     // 简化地磁纬度（单参数模型标准算法）
+//     double phi = geoUser(0) + 12.5 * sin((geoUser(1) - 45.0) * PI / 180.0);
+//     double phi_r = phi * PI / 180.0;
+//
+//     // 本地时间（小时）
+//     double t = fmod(tow / 3600.0 + geoUser(1) / 15.0 + 24.0, 24.0);
+//
+//     // 电离层振幅
+//     double amp = a0 + a1 * phi_r + a2 * phi_r*phi_r + a3 * phi_r*phi_r*phi_r;
+//     if (amp < 0) amp = 0.0;
+//
+//     // 相位
+//     double x = 2.0 * PI * (t - 14.0) / 72000.0;
+//
+//     // 垂直延迟（秒）
+//     double iono_vert;
+//     if (fabs(x) < PI/2.0) {
+//         iono_vert = (5e-9 + amp * cos(x));
+//     } else {
+//         iono_vert = 5e-9;
+//     }
+//
+//     // 斜延迟（秒）
+//     double ionoTime = iono_vert * map;
+//
+//     // 频率改正（和你原来公式一样）
+//     double f1 = (satSystem == "G") ? 1575.42e6 : 1561.098e6;
+//     ionoTime *= (f1 * f1) / (freq * freq);
+//
+//     return ionoTime; // 单位：秒
+// }
+
+
+double klobucharIonosphericCorrection(Vector3d xyz,
+                                      double elev,
+                                      double azim,
+                                      double alpha[4],
+                                      double beta[4],
+                                      double tow,
+                                      SatID sat,
+                                      double freq)
+{
+    // 坐标转换
+    XYZ coord = xyz;
+    BLH blh;
+
+    if (sat.system == "G") {
+        GPSEllipsoid ell;
+        blh = xyz2blh(coord, ell);
+    }
+    else if (sat.system == "C") {
+        BDSEllipsoid ell;
+        blh = xyz2blh(coord, ell);
+    }
+    else {
+        cout << "The klobuchar don't support the Unknown system " << sat.system << endl;
+        exit(-1);
+    }
+
+    double latUser = blh(0);
+    double lonUser = blh(1);
+    double E = elev * PI / 180.0;
+    double A = azim * PI / 180.0;
+
+    double h_ion = (sat.system == "G") ? 350000.0 : 375000.0;
+
+    // 地球半径
+    double RE;
+    if (sat.system == "G") {
+        GPSEllipsoid ell;
+        RE = ell.getA();
+    }
+    else {
+        BDSEllipsoid ell;
+        RE = ell.getA();
+    }
+
+    // 地心角 ψ
+    double psi = PI / 2.0 - E - asin((RE * cos(E)) / (RE + h_ion));
+
+    // IPP 纬度
+    double latIPP = asin(sin(latUser) * cos(psi) + cos(latUser) * sin(psi) * cos(A));
+
+    // IPP 经度
+    double lonIPP = lonUser + (sin(psi) * sin(A)) / cos(latIPP);
+
+    // 地磁纬度
+    const double PHI_P_DEG    = 78.3;
+    const double LAMBDA_P_DEG = 291.0;
+    double phiP = PHI_P_DEG * PI / 180.0;
+    double lamP = LAMBDA_P_DEG * PI / 180.0;
+    double latMag = asin(sin(latIPP) * sin(phiP) + cos(latIPP) * cos(phiP) * cos(lonIPP - lamP));
+    double latMagDeg = latMag * 180.0 / PI;
+
+    // 当地时间
+    double t = 43200.0 * lonIPP / PI + tow;
+    t = fmod(t, 86400.0);
+    if (t < 0) t += 86400.0;
+
+    // 幅度 AI
+    double x = latMag / PI;
+    double AI = alpha[0] + alpha[1] * x + alpha[2] * x * x + alpha[3] * x * x * x;
+    if (AI < 0) AI = 0;
+
+    // 周期
+    double Pi = beta[0] + beta[1] * x + beta[2] * x * x + beta[3] * x * x * x;
+    if (Pi < 72000.0) Pi = 72000.0;
+
+    // 相位
+    double XI = 2 * PI * (t - 50400.0) / Pi;
+
+    // 倾斜因子
+    double F = 1.0 / sqrt(1.0 - pow((RE * cos(E)) / (RE + h_ion), 2));
+
+    // L1 电离层时间延迟
+    double I1;
+    if (fabs(XI) < PI / 2.0) {
+        I1 = (5e-9 + AI * cos(XI)) * F;
+    } else {
+        I1 = 5e-9 * F;
+    }
+
+    // 频率缩放
+    double f1 = L1_FREQ_GPS;
+    double ionoDelay = I1 * (f1 * f1) / (freq * freq);
+
+    // 调试输出（仅G10）
+    if (debug && sat.toString() == "G10") {
+        cout << "=============================================" << endl;
+        cout << "              KLOBUCHAR  DEBUG                " << endl;
+        cout << "=============================================" << endl;
+        cout << left
+             << "Sat          : " << sat << endl
+             << "psi          : " << fixed << setprecision(8) << psi       << " rad" << endl
+             << "latIPP       : " << fixed << setprecision(8) << latIPP    << " rad" << endl
+             << "lonIPP       : " << fixed << setprecision(8) << lonIPP    << " rad" << endl
+             << "latMagDeg    : " << fixed << setprecision(6) << latMagDeg << " deg" << endl
+             << "t            : " << fixed << setprecision(6) << t         << " s"   << endl
+             << "AI           : " << scientific << setprecision(10) << AI  << " s"   << endl
+             << "Pi           : " << fixed << setprecision(6) << Pi        << " s"   << endl
+             << "XI           : " << fixed << setprecision(8) << XI        << " rad" << endl
+             << "F            : " << fixed << setprecision(8) << F         << endl
+             << "I1           : " << scientific << setprecision(10) << I1  << " s"   << endl;
+        cout << "=============================================" << endl;
+    }
+
+    return ionoDelay;
+}
+
+std::map<SatID,double> tropDelay(Vector3d& xyz, std::map<SatID, double>&
+satElevData,double RH)
+{
+    std::map<SatID,double> tropDelaymap;
+    double tropDelay(0.0);
+    for (auto it:satElevData) {
+        if (it.first.system=="G") {
+            GPSEllipsoid ell;
+             BLH blh=xyz2blh(xyz,ell);
+
+            tropDelay=saastamoinenTroposphericCorrection(blh,it.second,it.first,RH);
+
+        }
+        else if (it.first.system=="C") {
+            BDSEllipsoid ell;
+            BLH blh=xyz2blh(xyz,ell);
+            tropDelay=saastamoinenTroposphericCorrection(blh,it.second,it.first,RH);
+        }
+        else {
+            cout<<"The tropDelay function don't support this system!!!!"<<endl;
+            continue;
+        }
+        tropDelaymap.insert(std::pair<SatID,double>(it.first,tropDelay));
+
+    }
+    return tropDelaymap;
+}
+
+
+double saastamoinenTroposphericCorrection(Vector3d geoUser, double elev ,SatID sat_id, double RH)
+{
+
+
+    // 1. 提取测站参数
+    double B = geoUser(0);    // 纬度 deg
+    double H_m   = geoUser(2);   // 高程 m
+    double E_deg = elev;         // 高度角 deg
+
+    // 转弧度
+
+    double E = E_deg * PI / 180.0;
+    double H_km = H_m / 1000.0;
+
+    // --------------------------
+    // 标准大气模型（你给的公式）
+    // --------------------------
+    // 气压 P (hPa/mbar)
+    double P = 1013.25 * pow(1.0 - 0.0000226 * H_m, 5.225);
+
+    // 温度 T (摄氏度)
+    double T_c = 15.0 - 0.0065 * H_m;
+
+    // 开尔文温度
+    double T_k = T_c + 273.15;
+
+    // 饱和水汽压 es
+    double es = 6.108 * exp((17.15 * T_k - 4684.0) / (T_k - 38.45));
+
+    // 实际水汽压 e
+    double e = RH * es;
+
+    // --------------------------
+    // 天顶干延迟 ZHD (米)
+    // --------------------------
+    double fBH = 1.0 - 0.00266 * cos(2 * B) - 0.00028 * H_km;
+    double ZHD = 2.277e-3 * P / fBH;
+
+    // --------------------------
+    // 天顶湿延迟 ZWD (米)
+    // --------------------------
+    double ZWD = 0.002277 * (1255.0 / T_k + 0.05) * e;
+
+    // --------------------------
+    // 天顶总延迟
+    // --------------------------
+    double ZTD = ZHD + ZWD;
+
+    // --------------------------
+    // 映射函数（简化模型）
+    // --------------------------
+    double mf = 1.0 / sin(E);
+
+    // 高度角过低保护
+    if (E < 5.0 * PI / 180.0) mf = 10.0;
+
+    // --------------------------
+    // 倾斜对流层延迟 (米)
+    // --------------------------
+    double tropoDelay = ZTD * mf;
+
+    // 调试输出
+
+    if (debug&&sat_id.toString()=="G10")
+    {
+        cout<<"sat:"<<sat_id<<endl;
+        cout << fixed << setprecision(6);
+        cout << "============================================" << endl;
+        cout << "           Saastamoinen 对流层延迟           " << endl;
+        cout << "============================================" << endl;
+        cout << "测站纬度    : " << B     << " rad" << endl;
+        cout << "测站高度    : " << H_m       << " m" << endl;
+        cout << "高度角      : " << E_deg     << " deg" << endl;
+        cout << "气压 P      : " << P         << " hPa" << endl;
+        cout << "温度 T      : " << T_c       << " ℃" << endl;
+        cout << "饱和水汽 es : " << es        << " hPa" << endl;
+        cout << "水汽 e      : " << e         << " hPa" << endl;
+        cout << "ZHD         : " << ZHD       << " m" << endl;
+        cout << "ZWD         : " << ZWD       << " m" << endl;
+        cout << "ZTD         : " << ZTD       << " m" << endl;
+        cout << "映射函数 mf : " << mf        << endl;
+        cout << "对流层延迟  : " << tropoDelay<< " m" << endl;
+        cout << "============================================" << endl;
+    }
+
+    return tropoDelay;
+}
+
 
 double wavelengthOfMW(string sys, string L1Type, string L2Type) {
     double f1 = getFreq(sys, L1Type);

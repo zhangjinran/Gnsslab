@@ -7,5 +7,6 @@
 /home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/cmake-build-debug/CMakeFiles/satid.dir
 /home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/cmake-build-debug/CMakeFiles/read_rinex_data.dir
 /home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/cmake-build-debug/CMakeFiles/gps_eph.dir
+/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/cmake-build-debug/CMakeFiles/system_bias.dir
 /home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/cmake-build-debug/CMakeFiles/edit_cache.dir
 /home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/cmake-build-debug/CMakeFiles/rebuild_cache.dir
