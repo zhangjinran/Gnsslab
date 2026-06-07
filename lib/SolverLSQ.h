@@ -30,13 +30,21 @@ class SolverLSQ {
 public:
 
     SolverLSQ() {};
-
+    Vector3d getxyz() const;
     virtual void solve(EquSys &equSys);
     int getIndex(const VariableSet &varSet, const Variable &thisVar);
     double getSolution(const Parameter &type,
                        VariableSet &currentUnkSet,
                        const VectorXd &stateVec);
+    Eigen::VectorXd getResiduals() const;
 
+    void setxyz(const Vector3d &xyz) ;
+    MatrixXd getcov_r();
+    double getBias() const;
+    double getSigma0() const;
+    MatrixXd getw() const;
+
+    MatrixXd getCovMatrix() const;
     Eigen::Vector3d getdxyz() const{
         return dxyz;
     };
@@ -45,11 +53,16 @@ public:
     virtual ~SolverLSQ() {};
 
 private:
-
+    double bias;
+    MatrixXd W;
     VectorXd state;
     MatrixXd covMatrix;
+    MatrixXd cov_r;
     Vector3d dxyz;
+    Vector3d xyz;
     VariableSet currentUnkSet;
+    VectorXd residuals;
+    double sigma0;
 }; // End of class 'SolverLSQ'
 
 

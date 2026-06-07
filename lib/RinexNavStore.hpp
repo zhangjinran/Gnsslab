@@ -24,9 +24,15 @@
 #include <map>
 #include <algorithm>
 #include <fstream>
+#include <memory>
 
 #include "NavEphGPS.hpp"
 #include "NavEphBDS.hpp"
+#include "NavEphGLONASS.hpp"
+#include "NavEphGalileo.hpp"
+#include "NavEphQZSS.hpp"
+#include "NavEphIRNSS.hpp"
+#include "NavEphBase.hpp"
 #include "GnssStruct.h"
 #include "SP3Store.hpp"
 
@@ -36,17 +42,43 @@ class RinexNavStore {
 
     public:
 
-    RinexNavStore() {};
+    RinexNavStore() : isLoadedFlag(false) {};
 
     void loadGPSEph(NavEphGPS &gpsEph, string &line, fstream &navFile);//读取单个卫星、单历元的导航电文所有数据
     void loadBDSEph(NavEphBDS &bdsEph, string &line, fstream &navFile);//读取单个卫星、单历元的导航电文所有数据
-    void loadFile(string &file);//读取单篇文件的所有数据。可以调用loadGPSEph函数。
+    void loadGLOEph(NavEphGLONASS &gloEph, string &line, fstream &navFile);//读取GLONASS卫星导航电文数据
+    void loadGalileoEph(NavEphGalileo &galEph, string &line, fstream &navFile);//读取Galileo卫星导航电文数据
+    void loadQZSSEph(NavEphQZSS &qzssEph, string &line, fstream &navFile);//读取QZSS卫星导航电文数据
+    void loadIRNSSEph(NavEphIRNSS &irnssEph, string &line, fstream &navFile);//读取IRNSS卫星导航电文数据
+    NavEphGLONASS findGLOEph(const SatID &sat, const CommonTime &epoch);//寻找GLONASS卫星星历数据
+    NavEphGalileo findGalileoEph(const SatID &sat, const CommonTime &epoch);//寻找Galileo卫星星历数据
+    NavEphQZSS findQZSSEph(const SatID &sat, const CommonTime &epoch);//寻找QZSS卫星星历数据
+    NavEphIRNSS findIRNSSEph(const SatID &sat, const CommonTime &epoch);//寻找IRNSS卫星星历数据
+    bool loadFile(string &file);//读取单篇文件的所有数据。可以调用loadGPSEph函数。返回true表示成功，false表示失败。
     Xvt getXvt(const SatID &sat, const CommonTime &epoch);//用于计算位置速度和钟差。
     NavEphGPS findGPSEph(const SatID &sat, const CommonTime &epoch);//寻找指定卫星编号和历元的导航电文数据。
     NavEphBDS findBDSEph(const SatID &sat, const CommonTime &epoch);//寻找指定卫星编号和历元的导航电文数据。
+    std::unique_ptr<NavEphBase> findEph(const SatID &sat, const CommonTime &epoch);//使用工厂函数统一查找星历数据
     void gerContrast(string system ,int Cout,CommonTime predictedTimeInit,CommonTime stoptime ,SP3Store sp3Store) ;
     void getContrastData(SP3Store &sp3Eph,CommonTime predictedTime,CommonTime stoptime,int period);
     void writeFile(std::string filename,std::string name);
+    void writeContrastData(std::ofstream& fout, const std::map<SatID, ContrastData>& dataSet);
+    /// 检查是否已成功加载数据
+    bool isLoaded() const { return isLoadedFlag; }
+
+    /// 检查是否有星历数据
+    bool hasEphData() const { 
+        return !gpsEphData.empty() || !bdsEphData.empty(); 
+    }
+
+    /// 检查指定系统是否有星历数据
+    bool hasEphData(const std::string& system) const;
+
+    /// 获取已加载的系统列表
+    std::vector<std::string> getSystems() const;
+
+    /// 获取支持的系统列表（通过工厂类）
+    std::vector<std::string> getSupportedSystems() const;
 
     /// destructor
     virtual ~RinexNavStore() {};
@@ -61,8 +93,18 @@ class RinexNavStore {
         int geoUTCid;
     };
 
+    // BDS电离层参数结构
+    struct BDSIonoParam {
+        double alpha[4] = {0};
+        double beta[4] = {0};
+        bool hasAlpha = false;
+        bool hasBeta = false;
+    };
+    
     //电离层改正参数的数据结构
     typedef map<string, vector<double>> ionoCorrMap;
+    //BDS专用电离层参数（按SatID存储）
+    typedef map<SatID, BDSIonoParam> ionoCorrBDSMap;
     //时间系统改正参数的数据结构
     typedef map<string, TimeSysCorr> timeSysCorrMap;
 
@@ -76,6 +118,7 @@ class RinexNavStore {
     std::vector<std::string> commentList;  ///< Comment list
 
     ionoCorrMap ionoCorrData;
+    ionoCorrBDSMap ionoCorrDataBDS;  // BDS专用电离层参数
     timeSysCorrMap timeSysCorrData;
 
     long leapSeconds;              ///< Leap seconds
@@ -101,14 +144,31 @@ class RinexNavStore {
     ///in order to get the eph data num easily
     typedef map<SatID, std::map<CommonTime, NavEphGPS>> GpsEphMap;
     typedef map<SatID, std::map<CommonTime, NavEphBDS>> BdsEphMap;
+    typedef map<SatID, std::map<CommonTime, NavEphGLONASS>> GloEphMap;
+    typedef map<SatID, std::map<CommonTime, NavEphGalileo>> GalEphMap;
+    typedef map<SatID, std::map<CommonTime, NavEphQZSS>> QzssEphMap;
+    typedef map<SatID, std::map<CommonTime, NavEphIRNSS>> IrnssEphMap;
+    typedef map<SatID, std::map<CommonTime, std::unique_ptr<NavEphBase>>> EphDataMap;
+    
     vector<SatID> satTable;
 
     GpsEphMap gpsEphData;
     BdsEphMap bdsEphData;
+    GloEphMap gloEphData;
+    GalEphMap galEphData;
+    QzssEphMap qzssEphData;
+    IrnssEphMap irnssEphData;
+    EphDataMap ephData;
+    std::set<std::string> loadedSystems;
     map<SatID,ContrastData> gpscontrastDataSet;
     map<SatID,ContrastData> bdscontrastDataSet;
+    map<SatID,ContrastData> gloContrastDataSet;
+    map<SatID,ContrastData> galContrastDataSet;
 
     map<string,int> EphData{{"G",0},{"C",0},{"R",0},{"E",0},{"J",0},{"I",0},{"S",0}};
+
+    /// 加载状态标志
+    bool isLoadedFlag;
 
 
 

@@ -40,7 +40,28 @@ aux_source_directory( ${PROJECT_SOURCE_DIR}/lib/ DIR_LIB_SRCS )
 # 根据源文件创建库文件
 add_library( gnss SHARED ${DIR_LIB_SRCS}
         lib/Time2020Convert.h
-        lib/Time2020Convert.cpp)
+        lib/Time2020Convert.cpp
+        lib/write.h
+        lib/write.cpp
+        lib/SPPCode.h
+        lib/SPPCode.cpp
+        lib/SPPGFCode.cpp
+        lib/SPPGFCode.h
+        lib/NavEphGLONASS.hpp
+        lib/NavEphGLONASS.cpp
+        lib/NavEphBase.hpp
+        lib/NavEphBase.cpp
+        lib/NavEphRegistry.cpp
+        lib/NavEphGalileo.hpp
+        lib/NavEphGalileo.cpp
+        lib/NavEphQZSS.hpp
+        lib/NavEphQZSS.cpp
+        lib/NavEphIRNSS.hpp
+        lib/NavEphIRNSS.cpp
+        lib/DataExporter.h
+        lib/DataExporter.cpp
+        lib/OrbitExporter.h
+        lib/OrbitExporter.cpp)
     #DIR_LIB_SRCS是我们自己定义的变量。
 
 find_package(PCL REQUIRED)
@@ -84,8 +105,8 @@ target_link_libraries(coord_myself gnss)
 #target_link_libraries(coord_convert5 gnss)
 #
 #
-#add_executable(skyplot examples/exam-2.4-skyplot.cpp)
-#target_link_libraries(skyplot gnss)
+add_executable(skyplot examples/exam-2.4-skyplot.cpp)
+target_link_libraries(skyplot gnss)
 #
 add_executable(satid examples/exam-3.1-satid.cpp)
 target_link_libraries(satid gnss)
@@ -93,14 +114,46 @@ target_link_libraries(satid gnss)
 add_executable(read_rinex_data examples/exam-3.2-read_rinex_data.cpp)
 target_link_libraries(read_rinex_data gnss)
 #
+add_executable(obs_statistics examples/exam-3.3-obs-statistics.cpp)
+target_link_libraries(obs_statistics gnss)
+#
 add_executable(gps_eph examples/exam-4.1-gps_eph.cpp)
 target_link_libraries(gps_eph gnss ${PCL_LIBRARIES})
 #
 add_executable(system_bias examples/exam-5.1-system_bias.cpp)
 target_link_libraries(system_bias gnss)
 #
-#add_executable(sppif examples/exam-6.1-sppif.cpp)
-#target_link_libraries(sppif gnss)
+add_executable(atmospheric_delay examples/exam-5.2-atmospheric_delay.cpp)
+target_link_libraries(atmospheric_delay gnss)
+#
+add_executable(atmospheric_test examples/exam-5.3-spp_atmospheric_test.cpp)
+target_link_libraries(atmospheric_test gnss)
+#
+add_executable(spp_tgd examples/exam-5.4-tgd_test.cpp)
+target_link_libraries(spp_tgd gnss)
+
+#
+add_executable(bds_satweight_test examples/exam-5.5-bds-satweight-test.cpp)
+target_link_libraries(bds_satweight_test gnss)
+#
+add_executable(spp_error_model_test examples/exam-5.6-spp-error-model-test.cpp)
+target_link_libraries(spp_error_model_test gnss)
+#
+
+add_executable(sppif examples/exam-6.1-sppif.cpp)
+target_link_libraries(sppif gnss)
+#
+add_executable(spp examples/exam-6.2-spp.cpp)
+target_link_libraries(spp gnss)
+#
+add_executable(sppUC examples/exam-6.3-GFCode.cpp)
+target_link_libraries(sppUC gnss)
+#
+add_executable(sppif_bds_test examples/exam-6.4-sppif-bds-test.cpp)
+target_link_libraries(sppif_bds_test gnss)
+#
+add_executable(bds_ifcode_stat examples/exam-6.5-bds_ifcode_stat.cpp)
+target_link_libraries(bds_ifcode_stat gnss)
 #
 #add_executable(cs_detect_mw examples/exam-7.1-cs_detect_mw.cpp)
 #target_link_libraries(cs_detect_mw gnss)
@@ -114,3 +167,11 @@ target_link_libraries(system_bias gnss)
 #add_executable(rtk_kal examples/exam-8.5-rtk_kal.cpp)
 #target_link_libraries(rtk_kal gnss)
 
+add_executable(test examples/zuiyouguji/test.cpp lib/zuiyouguji/gnssfunc.cpp lib/zuiyouguji/gnssfunc.h)
+target_link_libraries(test gnss)
+
+add_executable(diagnostic_bds examples/exam-diagnostic-bds.cpp)
+target_link_libraries(diagnostic_bds gnss)
+
+add_executable(bds_c2i_c7i_count examples/exam-bds-c2i-c7i-count.cpp)
+target_link_libraries(bds_c2i_c7i_count gnss)

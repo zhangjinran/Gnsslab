@@ -7,9 +7,11 @@
 #include <cmath>
 #include <string>
 
+#include "DataExporter.h"
+
 using namespace std;
 
-struct Satellite {
+struct LocalSatellite {
     double azimuth;    // 方位角（度）
     double elevation;  // 仰角（度）
     std::string id;    // 卫星编号
@@ -26,7 +28,7 @@ void polarToCartesian(double centerX, double centerY, double radius,
     y = centerY - r * cos(azimuthRad);  // SVG坐标系Y轴向下
 }
 
-void generateSkyplot(const std::vector<Satellite>& satellites,
+void generateSkyplot(const std::vector<LocalSatellite>& satellites,
                      const std::string& filename = "skyplot.svg") {
     const double canvasSize = 500.0;
     const double center = canvasSize / 2;
@@ -96,16 +98,30 @@ void generateSkyplot(const std::vector<Satellite>& satellites,
 
 int main() {
     // 示例卫星数据
-    std::vector<Satellite> satellites = {
+    std::vector<LocalSatellite> localSatellites = {
             {45.0, 30.0, "G12", "#FF4444"},   // 红色：GPS
             {135.0, 60.0, "R05", "#44FF44"},   // 绿色：GLONASS
             {270.0, 45.0, "E21", "#4444FF"},   // 蓝色：Galileo
             {315.0, 15.0, "C07", "#FFAA00"}    // 橙色：北斗
     };
 
-    string filename = "D:\\documents\\Source\\gnssLab-2.2\\data\\skyplot.svg";
+    // 转换为 DataExporter 使用的卫星结构
+    std::vector<gnss::Satellite> exportSatellites = {
+            {45.0, 30.0, "G12", "GPS"},
+            {135.0, 60.0, "R05", "GLONASS"},
+            {270.0, 45.0, "E21", "Galileo"},
+            {315.0, 15.0, "C07", "BDS"}
+    };
 
-    generateSkyplot(satellites, filename);
+    // 导出卫星数据
+    if (gnss::DataExporter::exportSatelliteSkyplotData(exportSatellites)) {
+        std::cout << "✓ 卫星天空图数据导出成功" << std::endl;
+    } else {
+        std::cout << "✗ 卫星天空图数据导出失败" << std::endl;
+    }
+
+    // 生成SVG天空图
+    generateSkyplot(localSatellites, "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/figure/skyplot.svg");
 
     std::cout << "天空图已生成到 skyplot.svg" << std::endl;
     return 0;

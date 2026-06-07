@@ -40,6 +40,7 @@ public:
         GAL, // Galileo system time
         BDT, // BDS system time
         QZS, // qzss time
+        IRN, // IRNSS system time
         UTC, // utc
         TAI,
         TT,
@@ -140,7 +141,7 @@ public:
         m_timeSystem = timeSystem;
     }
 
-    void get(
+    void   get(
             long &day,
             double &sod,
             TimeSystem &timeSystem) const {
@@ -156,14 +157,17 @@ public:
         return *this;
     };
 
-    double operator-(const CommonTime &right) const {
-        if (m_timeSystem != right.m_timeSystem) {
-            InvalidRequest ir("CommonTime objects not in same time system, cannot be differenced");
-            throw (ir);
-        }
+    double toSeconds() const
+    {
+        return m_day * 86400.0 + m_sod;
+    }
 
-        return (SEC_PER_DAY * static_cast<double>( m_day - right.m_day  ) +
-                m_sod - right.m_sod);
+    double operator-(const CommonTime& rhs) const
+    {
+        if (m_timeSystem != rhs.m_timeSystem)
+            throw InvalidRequest("time system mismatch");
+
+        return toSeconds() - rhs.toSeconds();
     }
 
     CommonTime operator+(double sec) const {
@@ -810,7 +814,187 @@ public:
     }
 
 
-}; // end class GPSWeekSecond
+}; // end class BDTWeekSecond
 
+// ==================== Galileo WeekSecond ====================
+class GALWeekSecond : public WeekSecond
+{
+public:
+    GALWeekSecond(unsigned int w = 0,
+                  double s = 0.,
+                  TimeSystem ts = TimeSystem::GAL)
+            : WeekSecond(w, s)
+    { timeSystem = ts; }
+
+    ~GALWeekSecond() {}
+
+    int Nbits(void) const
+    {
+        static const int n = 12;
+        return n;
+    }
+
+    int bitmask(void) const
+    {
+        static const int bm = 0xFFF;
+        return bm;
+    }
+
+    long MJDEpoch(void) const
+    {
+        static const long e = GAL_EPOCH_MJD;
+        return e;
+    }
+
+    inline bool operator==( const GALWeekSecond& right ) const
+    { return WeekSecond::operator==( right ); }
+    inline bool operator!=( const GALWeekSecond& right ) const
+    { return WeekSecond::operator!=( right ); }
+    inline bool operator<( const GALWeekSecond& right ) const
+    { return WeekSecond::operator<( right ); }
+    inline bool operator>( const GALWeekSecond& right ) const
+    { return WeekSecond::operator>( right ); }
+    inline bool operator<=( const GALWeekSecond& right ) const
+    { return WeekSecond::operator<=( right ); }
+    inline bool operator>=( const GALWeekSecond& right ) const
+    { return WeekSecond::operator>=( right ); }
+}; // end class GALWeekSecond
+
+// ==================== GLONASS WeekSecond ====================
+class GLOWeekSecond : public WeekSecond
+{
+public:
+    GLOWeekSecond(unsigned int w = 0,
+                  double s = 0.,
+                  TimeSystem ts = TimeSystem::GLO)
+            : WeekSecond(w, s)
+    { timeSystem = ts; }
+
+    ~GLOWeekSecond() {}
+
+    int Nbits(void) const
+    {
+        static const int n = 0;
+        return n;
+    }
+
+    int bitmask(void) const
+    {
+        static const int bm = 0x0;
+        return bm;
+    }
+
+    long MJDEpoch(void) const
+    {
+        static const long e = GLO_EPOCH_MJD;
+        return e;
+    }
+
+    inline bool operator==( const GLOWeekSecond& right ) const
+    { return WeekSecond::operator==( right ); }
+    inline bool operator!=( const GLOWeekSecond& right ) const
+    { return WeekSecond::operator!=( right ); }
+    inline bool operator<( const GLOWeekSecond& right ) const
+    { return WeekSecond::operator<( right ); }
+    inline bool operator>( const GLOWeekSecond& right ) const
+    { return WeekSecond::operator>( right ); }
+    inline bool operator<=( const GLOWeekSecond& right ) const
+    { return WeekSecond::operator<=( right ); }
+    inline bool operator>=( const GLOWeekSecond& right ) const
+    { return WeekSecond::operator>=( right ); }
+}; // end class GLOWeekSecond
+
+// ==================== QZSS WeekSecond ====================
+class QZSWeekSecond : public WeekSecond
+{
+public:
+    QZSWeekSecond(unsigned int w = 0,
+                  double s = 0.,
+                  TimeSystem ts = TimeSystem::QZS)
+            : WeekSecond(w, s)
+    { timeSystem = ts; }
+
+    ~QZSWeekSecond() {}
+
+    int Nbits(void) const
+    {
+        static const int n = 10;
+        return n;
+    }
+
+    int bitmask(void) const
+    {
+        static const int bm = 0x3FF;
+        return bm;
+    }
+
+    long MJDEpoch(void) const
+    {
+        static const long e = QZS_EPOCH_MJD;
+        return e;
+    }
+
+    inline bool operator==( const QZSWeekSecond& right ) const
+    { return WeekSecond::operator==( right ); }
+    inline bool operator!=( const QZSWeekSecond& right ) const
+    { return WeekSecond::operator!=( right ); }
+    inline bool operator<( const QZSWeekSecond& right ) const
+    { return WeekSecond::operator<( right ); }
+    inline bool operator>( const QZSWeekSecond& right ) const
+    { return WeekSecond::operator>( right ); }
+    inline bool operator<=( const QZSWeekSecond& right ) const
+    { return WeekSecond::operator<=( right ); }
+    inline bool operator>=( const QZSWeekSecond& right ) const
+    { return WeekSecond::operator>=( right ); }
+}; // end class QZSWeekSecond
+
+// ==================== IRNSS WeekSecond ====================
+class IRNWeekSecond : public WeekSecond
+{
+public:
+    IRNWeekSecond(unsigned int w = 0,
+                  double s = 0.,
+                  TimeSystem ts = TimeSystem::IRN)
+            : WeekSecond(w, s)
+    { timeSystem = ts; }
+
+    ~IRNWeekSecond() {}
+
+    int Nbits(void) const
+    {
+        static const int n = 10;
+        return n;
+    }
+
+    int bitmask(void) const
+    {
+        static const int bm = 0x3FF;
+        return bm;
+    }
+
+    long MJDEpoch(void) const
+    {
+        static const long e = IRN_EPOCH_MJD;
+        return e;
+    }
+
+    inline bool operator==( const IRNWeekSecond& right ) const
+    { return WeekSecond::operator==( right ); }
+    inline bool operator!=( const IRNWeekSecond& right ) const
+    { return WeekSecond::operator!=( right ); }
+    inline bool operator<( const IRNWeekSecond& right ) const
+    { return WeekSecond::operator<( right ); }
+    inline bool operator>( const IRNWeekSecond& right ) const
+    { return WeekSecond::operator>( right ); }
+    inline bool operator<=( const IRNWeekSecond& right ) const
+    { return WeekSecond::operator<=( right ); }
+    inline bool operator>=( const IRNWeekSecond& right ) const
+    { return WeekSecond::operator>=( right ); }
+}; // end class IRNWeekSecond
+
+// ==================== WeekSecond Factory Function ====================
+WeekSecond* createWeekSecond(TimeSystem::SystemType sys,
+                            unsigned int week = 0,
+                            double sow = 0.0);
 
 #endif //TimeStruct_H

@@ -73,12 +73,15 @@ double varOfMW(string,
 // 系统误差相关函数
 //================
 std::map<SatID,Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int IF);
+
+void writefileSatPos(std::map<SatID, Xvt> satXvtTransTime, std::map<SatID, Xvt> satXvtTransTimeIF, CivilTime epoch, const std::string& outputPath);
+
 Xvt computeAtTransmitTime(const CommonTime& tr,
                           const double& pr,
                           const SatID& sat,
                           RinexNavStore& navStore,int IF=0);
 
-double codeSelectFrequency(string code);
+double codeSelectFrequency(const string& code);
 
 void correctTGD(Xvt& xvt,SatID sat_id,CommonTime time,int IF,RinexNavStore& navStore);
 
@@ -101,12 +104,22 @@ double klobucharIonosphericCorrection(Vector3d geoUser,
                                       double tow,
                                       SatID satSystem,
                                       double freq);
+double GalileoIonosphericCorrection(
+    const Vector3d& xyz,
+    double elev,
+    double azim,
+    double ai[3],
+    double freq);
 std::map<SatID,double> ionoDelay(Vector3d& xyz, CommonTime& epoch, std::map<SatID,
-double>& satElevData, std::map<SatID, double>& satAzimData,RinexNavStore& navStore);
+double>& satElevData, std::map<SatID, double>& satAzimData, RinexNavStore& navStore,
+std::map<std::string, std::set<std::string>>* sysTypes = nullptr);
 
 
-double saastamoinenTroposphericCorrection(Vector3d geoUser, double elev,SatID sat_id, double RH = 0.7);
-std::map<SatID,double> tropDelay(Vector3d& xyz, std::map<SatID, double>&satElevData,double RH = 0.7);
+double saastamoinenTroposphericCorrection(const Vector3d& geoUser,
+    double elev_deg,
+    const SatID& sat_id,
+    double RH_in = 0.7);
+std::map<SatID,double> tropDelay(Vector3d& xyz, std::map<SatID, double>&satElevData,double RH = 0.5);
 //================
 
 void detectCSMW(ObsData &obsData,
@@ -164,5 +177,6 @@ void printSolution(std::fstream & solStream,
 void printSolution(std::fstream & solStream,
                    CommonTime& ctTime,
                    Eigen::Vector3d& xyzRover);
+double getTGD(SatID sat_id,RinexNavStore navstore,std::string obsID,CommonTime& ctTime);
 
 #endif //GNSSLAB_GNSSFUNC_H

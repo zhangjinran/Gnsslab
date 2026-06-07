@@ -24,6 +24,17 @@
 #include <cmath>
 #define debug 1
 
+
+// 弧度转角度
+inline double rad2deg(double rad) {
+    return rad * RAD_TO_DEG;
+}
+
+// 角度转弧度
+inline double deg2rad(double deg) {
+    return deg * DEG_TO_RAD;
+}
+
 // 坐标转换函数
 inline BLH xyz2blh(const XYZ &xyz, const ReferenceFrame &frame) {
     // 获取椭球参数

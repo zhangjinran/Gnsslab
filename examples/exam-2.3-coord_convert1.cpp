@@ -146,7 +146,7 @@ int main() {
         return 1;
     }
 
-    xyz2blh()
+    xyz2blh();
     return 0;
 }
 

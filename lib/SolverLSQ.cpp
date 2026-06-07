@@ -19,18 +19,36 @@
 #include "SolverLSQ.h"
 #include <fstream>
 
-#define debug 1
+#define debug 0
 using namespace std;
+Eigen::VectorXd SolverLSQ::getResiduals() const
+{
+    return residuals;
+}
 
+double SolverLSQ::getSigma0() const
+{
+    return sigma0;
+}
 
 void SolverLSQ::solve(EquSys &equSys) {
 
-    if(debug)
-        cout << "SolverLSQ:" << endl;
+    if(debug) {
+        cout << "\n" << string(60, '=') << endl;
+        cout << "=== SolverLSQ::solve() - 最小二乘求解 ===" << endl;
+        cout << string(60, '-') << endl;
+    }
 
     currentUnkSet = equSys.varSet;
     int numUnk = currentUnkSet.size();
     int numObs = equSys.obsEquData.size();
+
+    if(debug) {
+        cout << "观测方程数 (numObs): " << numObs << endl;
+        cout << "未知参数数 (numUnk): " << numUnk << endl;
+        cout << "自由度 (redundancy): " << numObs - numUnk << endl;
+        cout << string(60, '-') << endl;
+    }
 
     VectorXd prefit = VectorXd::Zero(numObs);
     MatrixXd hMatrix = MatrixXd::Zero(numObs, numUnk);
@@ -41,13 +59,10 @@ void SolverLSQ::solve(EquSys &equSys) {
         prefit(iobs) = ed.second.prefit;
 
         for (auto vc: ed.second.varCoeffData) {
-            // 从整体的X中搜索当前未知参数的位置
             int indexUnk = getIndex(currentUnkSet, vc.first);
-            // 把偏导数插入到对应的h矩阵中
             hMatrix(iobs, indexUnk) = vc.second;
         }
         wMatrix(iobs, iobs) = ed.second.weight;
-
         iobs++;
     }
 
@@ -59,15 +74,22 @@ void SolverLSQ::solve(EquSys &equSys) {
     }
 
     if (debug) {
+        cout << "\n【先验残差向量 (prefit)】" << endl;
+        cout << "维度: " << prefit.rows() << " x " << prefit.cols() << endl;
+        cout << prefit.transpose() << endl;
 
-        cout << "prefit:" <<endl;
-        cout << prefit <<endl;
+        cout << "\n【设计矩阵 (hMatrix)】" << endl;
+        cout << "维度: " << hMatrix.rows() << " x " << hMatrix.cols() << endl;
+        cout << hMatrix << endl;
 
-        cout << "hMatrix:" <<endl;
-        cout << hMatrix <<endl;
-
-        cout << "wMatrix:" <<endl;
-        cout << wMatrix <<endl;
+        cout << "\n【权重矩阵 (wMatrix)】" << endl;
+        cout << "维度: " << wMatrix.rows() << " x " << wMatrix.cols() << endl;
+        cout << "对角元素(权重值): ";
+        for (int i = 0; i < min(10, (int)wMatrix.rows()); ++i) {
+            cout << wMatrix(i, i) << " ";
+        }
+        if (wMatrix.rows() > 10) cout << "...";
+        cout << endl;
     }
 
     try {
@@ -79,12 +101,60 @@ void SolverLSQ::solve(EquSys &equSys) {
         throw (e);
     }
 
+
     state = covMatrix * hT * wMatrix * prefit;
 
-    if(debug)
+    // 后验残差
+    residuals = prefit - hMatrix * state;
+
+    // 单位权中误差
+    int redundancy = numObs - numUnk;
+
+    if(redundancy > 0)
     {
-        cout << "state" << endl;
-        cout << state.transpose() << endl;
+        sigma0 = sqrt(
+            (residuals.transpose()
+            * wMatrix
+            * residuals)(0,0)
+            / redundancy
+        );
+    }
+    else
+    {
+        sigma0 = 0.0;
+    }
+    MatrixXd I = MatrixXd::Identity(numObs, numObs);
+    cov_r = sigma0 * sigma0 * (I - hMatrix * covMatrix * hMatrix.transpose() * wMatrix)*wMatrix.inverse();
+    W=wMatrix;
+    if(debug) {
+        cout << "\n【求解结果】" << endl;
+        cout << string(40, '-') << endl;
+        
+        cout << "\n1. 状态向量 (state)" << endl;
+        cout << "维度: " << state.rows() << " x " << state.cols() << endl;
+        cout << "解向量: " << state.transpose() << endl;
+        
+        cout << "\n2. 单位权中误差 (sigma0)" << endl;
+        cout << fixed << setprecision(6) << "sigma0 = " << sigma0 << " m" << endl;
+        
+        cout << "\n3. 后验残差 (residuals)" << endl;
+        cout << "维度: " << residuals.rows() << " x " << residuals.cols() << endl;
+        cout << "残差向量: " << residuals.transpose() << endl;
+        
+        // 计算残差统计信息
+        double maxResidual = residuals.cwiseAbs().maxCoeff();
+        double minResidual = residuals.cwiseAbs().minCoeff();
+        double meanResidual = residuals.mean();
+        double rmsResidual = sqrt(residuals.squaredNorm() / residuals.size());
+        
+        cout << "\n4. 残差统计" << endl;
+        cout << fixed << setprecision(6);
+        cout << "   最大值: " << maxResidual << " m" << endl;
+        cout << "   最小值: " << minResidual << " m" << endl;
+        cout << "   平均值: " << meanResidual << " m" << endl;
+        cout << "   RMS:    " << rmsResidual << " m" << endl;
+        
+        cout << "\n" << string(60, '=') << endl;
     }
 
     double dx = getSolution(Parameter::dX, currentUnkSet, state);
@@ -94,6 +164,13 @@ void SolverLSQ::solve(EquSys &equSys) {
     dxyz[0] = dx;
     dxyz[1] = dy;
     dxyz[2] = dz;
+
+    try {
+        bias=getSolution(Parameter::bias, currentUnkSet, state);
+    }
+    catch (...) {}
+
+
 
 }
 
@@ -131,3 +208,23 @@ noexcept(false) {
 }  // End of method 'SolverGeneral::getSolution()'   
 
 
+Vector3d SolverLSQ::getxyz() const {
+    return xyz;
+}
+void SolverLSQ::setxyz(const Vector3d &xyz) {
+    this->xyz = xyz;
+}
+
+
+MatrixXd SolverLSQ::getCovMatrix() const {
+    return covMatrix;
+}
+MatrixXd SolverLSQ::getcov_r() {
+    return cov_r;
+}
+MatrixXd SolverLSQ::getw() const {
+    return W;
+}
+double SolverLSQ::getBias() const {
+    return bias;
+}

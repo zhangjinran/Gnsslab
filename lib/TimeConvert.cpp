@@ -25,61 +25,136 @@
 
 using namespace std;
 
+// 跳秒数据结构
+struct LeapSecondData {
+    double mjd;      // Modified Julian Date
+    double leapSec;  // 跳秒数
+};
+
+// 静态跳秒数据（仅在第一次调用时初始化）
+const std::vector<LeapSecondData>& getLeapSecondData() {
+    static const std::vector<LeapSecondData> leapData = {
+        {41317.0, 10},   // 1972-01-01
+        {41499.0, 11},   // 1972-07-01
+        {41683.0, 12},   // 1973-01-01
+        {42048.0, 13},   // 1974-01-01
+        {42413.0, 14},   // 1975-01-01
+        {42778.0, 15},   // 1976-01-01
+        {43144.0, 16},   // 1977-01-01
+        {43509.0, 17},   // 1978-01-01
+        {43874.0, 18},   // 1979-01-01
+        {44239.0, 19},   // 1980-01-01
+        {44786.0, 20},   // 1981-07-01
+        {45151.0, 21},   // 1982-07-01
+        {45516.0, 22},   // 1983-07-01
+        {46247.0, 23},   // 1985-07-01
+        {47161.0, 24},   // 1988-01-01
+        {47892.0, 25},   // 1990-01-01
+        {48257.0, 26},   // 1991-01-01
+        {48804.0, 27},   // 1992-07-01
+        {49169.0, 28},   // 1993-07-01
+        {49534.0, 29},   // 1994-07-01
+        {50083.0, 30},   // 1996-01-01
+        {50630.0, 31},   // 1997-07-01
+        {51179.0, 32},   // 1999-01-01
+        {53736.0, 33},   // 2006-01-01
+        {54832.0, 34},   // 2009-01-01
+        {56109.0, 35},   // 2012-07-01
+        {57204.0, 36},   // 2015-07-01
+        {57754.0, 37}    // 2017-01-01
+    };
+    return leapData;
+}
+
 // 在给定的历史记录中查找跳秒
 double getLeapSeconds(const CommonTime &ct) {
-
-    std::map<double, double> leapData;
-
-    // mjd;
-    //
-    leapData[41317.0] = 10;
-    leapData[41499.0] = 11;
-    leapData[41683.0] = 12;
-    leapData[42048.0] = 13;
-    leapData[42413.0] = 14;
-    leapData[42778.0] = 15;
-    leapData[43144.0] = 16;
-    leapData[43509.0] = 17;
-    leapData[43874.0] = 18;
-    leapData[44239.0] = 19;
-    leapData[44786.0] = 20;
-    leapData[45151.0] = 21;
-    leapData[45516.0] = 22;
-    leapData[46247.0] = 23;
-    leapData[47161.0] = 24;
-    leapData[47892.0] = 25;
-    leapData[48257.0] = 26;
-    leapData[48804.0] = 27;
-    leapData[49169.0] = 28;
-    leapData[49534.0] = 29;
-    leapData[50083.0] = 30;
-    leapData[50630.0] = 31;
-    leapData[51179.0] = 32;
-    leapData[53736.0] = 33;
-    leapData[54832.0] = 34;
-    leapData[56109.0] = 35;
-    leapData[57204.0] = 36;
-    leapData[57754.0] = 37;
-
     double mjd_ct = ct.m_day;
 
-    // 1972.1.1
-    if (mjd_ct < 41317.0) {
-        InvalidRequest e("Time MUST be greater than 1972 for leapSec!");
-        throw (e);
+    // 1972.1.1 之前不支持跳秒查询
+    const double MJD_1972 = 41317.0;
+    if (mjd_ct < MJD_1972) {
+        InvalidRequest e("Time MUST be greater than 1972-01-01 for leap seconds!");
+        throw e;
     }
 
-    double leapSec;
+    const auto& leapData = getLeapSecondData();
+    double leapSec = 0.0;
 
-    //  循环所有的跳秒记录
-    for (auto ld: leapData) {
-        if (ld.first <= mjd_ct)
-            leapSec = ld.second;
+    // 查找不大于当前MJD的最大跳秒值
+    for (const auto& ld : leapData) {
+        if (ld.mjd <= mjd_ct) {
+            leapSec = ld.leapSec;
+        } else {
+            break;  // 数据已按MJD升序排列，可提前退出
+        }
     }
 
     return leapSec;
 }
 
+
+// 将时间转换为TAI时间系统
+// 返回值为需要调整的秒数（输入时间 + 返回值 = TAI时间）
+double convertToTAI(const CommonTime &ct) {
+    TimeSystem ts = ct.m_timeSystem;
+    
+    switch (ts.system) {
+        case TimeSystem::GPS:
+            return 19.0;  // GPS = TAI - 19s
+        case TimeSystem::UTC:
+            return getLeapSeconds(ct);  // UTC = TAI - leapSec
+        case TimeSystem::BDT:
+            return 33.0;  // BDT = TAI - 33s (RINEX 3.02)
+        case TimeSystem::TAI:
+            return 0.0;   // 已经是TAI
+        case TimeSystem::GAL:
+            return 19.0;  // Galileo = TAI - 19s
+        case TimeSystem::GLO:
+            return 0.0;   // GLONASS与UTC同步，此处简化处理
+        case TimeSystem::QZS:
+            return 19.0;  // QZSS = TAI - 19s (与GPS相同)
+        case TimeSystem::IRN:
+            return 19.0;  // IRNSS = TAI - 19s
+        default:
+            InvalidRequest e("Unsupported input TimeSystem: " + ts.toString());
+            throw e;
+    }
+}
+
+// 从TAI时间系统转换为目标时间系统
+// 返回值为需要调整的秒数（TAI时间 + 返回值 = 目标时间）
+double convertFromTAI(const CommonTime &ct, const TimeSystem &targetTS) {
+    switch (targetTS.system) {
+        case TimeSystem::GPS:
+            return -19.0;  // GPS = TAI - 19s
+        case TimeSystem::UTC: {
+            // UTC转换需要考虑跳秒变化
+            double dt_to_tai = getLeapSeconds(ct);
+            CommonTime tai_time = ct + dt_to_tai;
+            return -getLeapSeconds(tai_time);
+        }
+        case TimeSystem::BDT:
+            return -33.0;  // BDT = TAI - 33s
+        case TimeSystem::TAI:
+            return 0.0;    // 目标就是TAI
+        case TimeSystem::GAL:
+            return -19.0;  // Galileo = TAI - 19s
+        case TimeSystem::GLO:
+        {
+            // UTC转换需要考虑跳秒变化
+            double dt_to_tai = getLeapSeconds(ct);
+            CommonTime tai_time = ct + dt_to_tai;
+            return -getLeapSeconds(tai_time);
+        }
+        case TimeSystem::QZS:
+            return -19.0;  // QZSS = TAI - 19s (与GPS相同)
+        case TimeSystem::IRN:
+            return -19.0;  // IRNSS = TAI - 19s
+        default:
+            InvalidRequest e("Unsupported output TimeSystem: " + targetTS.toString());
+            throw e;
+    }
+}
 
 // 时间系统转换
 CommonTime convertTimeSystem(
@@ -88,48 +163,19 @@ CommonTime convertTimeSystem(
 
     TimeSystem inTS = ct.m_timeSystem;
 
-    double dt(0.0);
-    double dt_temp(0.0) ;
-
-    // identity
-    if (inTS == outTS)
+    // 如果输入输出时间系统相同，直接返回
+    if (inTS == outTS) {
         return ct;
-
-    if (inTS == TimeSystem::GPS)         // GPS -> TAI
-        dt = 19.;
-    else if (inTS == TimeSystem::UTC)    // UTC -> TAI
-        dt = getLeapSeconds(ct);
-    else if (inTS == TimeSystem::BDT)    // BDT -> TAI         // RINEX 3.02 seems to say this
-        dt = 33.;
-    else if (inTS == TimeSystem::TAI)    // TAI -> TAI
-        dt = 0.;
-    else {                              // other
-        InvalidRequest e("Invalid input TimeSystem " + inTS.toString());
-        throw (e);
     }
 
-    if (outTS == TimeSystem::GPS)        // TAI -> GAL
-        dt -= 19.;
-    else if (outTS == TimeSystem::UTC) {
-        // TAI -> GLO
-
-        dt_temp=dt- getLeapSeconds(ct);
-        //std::cout << dt_temp << std::endl;
-        dt-=getLeapSeconds(ct+dt_temp);
-        //std::cout << dt << std::endl;
-    }
-    else if (outTS == TimeSystem::BDT)   // TAI -> BDT
-        dt -= 33.;
-    else if (outTS == TimeSystem::TAI)   // TAI
-        dt -= 0.;
-    else {                              // other
-        InvalidRequest e("Invalid output TimeSystem " + outTS.toString());
-        throw (e);
-    }
-
-    CommonTime outT;
-    outT=ct + dt;
+    // 转换策略：先转换到TAI，再从TAI转换到目标系统
+    double dt_to_tai = convertToTAI(ct);
+    CommonTime tai_time = ct + dt_to_tai;
+    
+    double dt_from_tai = convertFromTAI(tai_time, outTS);
+    CommonTime outT = tai_time + dt_from_tai;
     outT.setTimeSystem(outTS);
+
     return outT;
 }
 
@@ -242,7 +288,7 @@ CommonTime JulianDate2CommonTime(JulianDate &jd) {
     return ct;
 }
 
-JulianDate CommonTime2JulianDate(CommonTime &ct) {
+JulianDate CommonTime2JulianDate(const CommonTime &ct) {
     JulianDate jd;
     long mjd_day;
     double sod;
@@ -328,6 +374,7 @@ void CommonTime2WeekSecond(const CommonTime& ct, WeekSecond& wk )
     long mday;
     double sod;
     ct.get(mday, sod, wk.timeSystem);
+
     // find the number of days since the beginning of the Epoch
     mday -= wk.MJDEpoch();
     // find out how many weeks that is
@@ -347,6 +394,7 @@ void WeekSecond2CommonTime(WeekSecond& wk, CommonTime& ct)
 
         int dow = static_cast<int>(wk.sow / SEC_PER_DAY);
         // NB this assumes MJDEpoch is an integer - what if epoch H:M:S != 0:0:0 ?
+
         long mday = wk.MJDEpoch() + (7 * wk.week) + dow;
         double sod(wk.sow - SEC_PER_DAY * dow);
         ct.set(mday,sod,wk.timeSystem);

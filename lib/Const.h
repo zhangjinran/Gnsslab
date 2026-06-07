@@ -7,10 +7,10 @@
  *      To use the software for commercial purposes;
  *      To redistribute the software.
  *
- * Author: Shoujian Zhang，shjzhang@sgg.whu.edu.cn， 2024-10-10
+ * Author: Shoujian Zhang??shjzhang@sgg.whu.edu.cn?? 2024-10-10
  *
  * References:
- * 1. Sanz Subirana, J., Juan Zornoza, J. M., & Hernández-Pajares, M. (2013).
+ * 1. Sanz Subirana, J., Juan Zornoza, J. M., & Hern??ndez-Pajares, M. (2013).
  *    GNSS data processing: Volume I: Fundamentals and algorithms. ESA Communications.
  * 2. Eckel, Bruce. Thinking in C++. 2nd ed., Prentice Hall, 2000.
  */
@@ -23,7 +23,7 @@
 using namespace std;
 
 //==============
-// 数学与物理常数
+// ???????????
 //====================
 
 //  PI
@@ -40,7 +40,7 @@ const double REL_CONST = -4.442807633e-10;
 const double REL_CONST_BDS = -4.442807309e-10;
 
 //------------------
-//  时间相关常数
+//  ?????????
 //-------------------
 
 /// Add this offset to convert Modified Julian Date to Julian Date.
@@ -105,8 +105,30 @@ const long BDS_EPOCH_MJD = 53736L;
 /// Weeks per BDS Epoch
 const long BDS_WEEK_PER_EPOCH = 8192L;
 
+// Galileo -------------------------------------------
+/// Modified Julian Date of Galileo epoch (Aug. 22, 1999).
+const long GAL_EPOCH_MJD = 51412L;
+/// Weeks per Galileo Epoch
+const long GAL_WEEK_PER_EPOCH = 4096L;
+
+// GLONASS -------------------------------------------
+/// Modified Julian Date of GLONASS epoch (Jan. 1, 1996).
+const long GLO_EPOCH_MJD = 37300L;
+
+// QZSS -------------------------------------------
+/// Modified Julian Date of QZSS epoch (same as GPS: Jan. 6, 1980).
+const long QZS_EPOCH_MJD = 44244L;
+/// Weeks per QZSS Epoch
+const long QZS_WEEK_PER_EPOCH = 1024L;
+
+// IRNSS -------------------------------------------
+/// Modified Julian Date of IRNSS epoch (Aug. 22, 1999).
+const long IRN_EPOCH_MJD = 54600L;
+/// Weeks per IRNSS Epoch
+const long IRN_WEEK_PER_EPOCH = 1024L;
+
 //===================================
-// GNSS 系统相关常量
+// GNSS ????????
 //===================================
 
 // GPS L1 carrier frequency in Hz
@@ -125,7 +147,7 @@ const double L5_WAVELENGTH_GPS = 0.254828048791;
 
 const double L5_FREQ_BDS = 1176.450e6; // B2a (BDS-3)
 const double L8_FREQ_BDS = 1191.795e6; // B2=B21+B2b/2
-const double L7_FREQ_BDS = 1207.140e6; // B2b (BDS-3/BDS-2)
+const double L7_FREQ_BDS = 1207.140e6; // B2b/B2I (BDS-3/BDS-2)
 const double L6_FREQ_BDS = 1268.520e6; // B3  (BDS-3/BDS-2)
 const double L2_FREQ_BDS = 1561.098e6; // B1I (BDS-3/BDS-2)
 const double L1_FREQ_BDS = 1575.420e6; // B1C (BDS-3)
@@ -157,9 +179,9 @@ const double L7_WAVELENGTH_GAL = C_MPS / L7_FREQ_GAL;
 const double L8_WAVELENGTH_GAL = C_MPS / L8_FREQ_GAL;
 
 // ========== GLONASS ==========
-// GLONASS G1 (FDMA) carrier frequency in Hz (k=0, 实际需根据频道号计算)
+// GLONASS G1 (FDMA) carrier frequency in Hz (k=0, ????????????????)
 const double L1_FREQ_GLO = 1602.00e6;   // G1 with channel number 0
-// GLONASS G2 (FDMA) carrier frequency in Hz (k=0, 实际需根据频道号计算)
+// GLONASS G2 (FDMA) carrier frequency in Hz (k=0, ????????????????)
 const double L2_FREQ_GLO = 1246.00e6;   // G2 with channel number 0
 // GLONASS G3 (CDMA) carrier frequency in Hz
 const double L3_FREQ_GLO = 1202.025e6;  // G3
@@ -238,7 +260,7 @@ throw() {
     }
     else if (sys == "S") {  // SBAS
         if (n == 1) return L1_WAVELENGTH_GPS;   // SBAS L1
-        else if (n == 5) return L5_WAVELENGTH_GPS; // SBAS L5 (如果支持)
+        else if (n == 5) return L5_WAVELENGTH_GPS; // SBAS L5 (??????)
     }
     else {
         std::cerr << "don't support this system" << endl;
@@ -261,8 +283,24 @@ throw() {
         else if (n == 7) return L7_FREQ_BDS;
         else if (n == 8) return L8_FREQ_BDS;
         else if (n == 6) return L6_FREQ_BDS;
+    } else if (sys == "E") {
+        if (n == 1) return L1_FREQ_GAL;
+        else if (n == 5) return L5_FREQ_GAL;
+        else if (n == 7) return L7_FREQ_GAL;
+        else if (n == 8) return L8_FREQ_GAL;
+    } else if (sys == "R") {
+        if (n == 1) return L1_FREQ_GLO;
+        else if (n == 2) return L2_FREQ_GLO;
+        else if (n == 3) return L3_FREQ_GLO;
+    } else if (sys == "J") {
+        if (n == 1) return L1_FREQ_QZSS;
+        else if (n == 2) return L2_FREQ_QZSS;
+        else if (n == 5) return L5_FREQ_QZSS;
+    } else if (sys == "I") {
+        if (n == 1) return L1_FREQ_IRNSS;
+        else if (n == 5) return L5_FREQ_IRNSS;
     } else {
-        std::cerr << "don't support system except GPS and Beidou" << endl;
+        std::cerr << "getFreq: don't support system " << sys << endl;
     }
     return 0.0;
 }
@@ -275,14 +313,30 @@ throw() {
         else if (type == "L2" || type == "C2") return L2_FREQ_GPS;
         else if (type == "L5" || type == "C5") return L5_FREQ_GPS;
     } else if (sys == "C") {
-        if (     type == "L1"|| type == "C1") return L1_FREQ_BDS;
-        else if (type == "L2"|| type == "C2") return L2_FREQ_BDS;
-        else if (type == "L5"|| type == "C5") return L5_FREQ_BDS;
-        else if (type == "L7"|| type == "C7") return L7_FREQ_BDS;
-        else if (type == "L8"|| type == "C8") return L8_FREQ_BDS;
-        else if (type == "L6"|| type == "C6") return L6_FREQ_BDS;
+        if (type == "L1" || type == "C1") return L1_FREQ_BDS;
+        else if (type == "L2" || type == "C2") return L2_FREQ_BDS;
+        else if (type == "L5" || type == "C5") return L5_FREQ_BDS;
+        else if (type == "L7" || type == "C7") return L7_FREQ_BDS;
+        else if (type == "L8" || type == "C8") return L8_FREQ_BDS;
+        else if (type == "L6" || type == "C6") return L6_FREQ_BDS;
+    } else if (sys == "E") {
+        if (type == "L1" || type == "C1") return L1_FREQ_GAL;
+        else if (type == "L5" || type == "C5") return L5_FREQ_GAL;
+        else if (type == "L7" || type == "C7") return L7_FREQ_GAL;
+        else if (type == "L8" || type == "C8") return L8_FREQ_GAL;
+    } else if (sys == "R") {
+        if (type == "L1" || type == "C1") return L1_FREQ_GLO;
+        else if (type == "L2" || type == "C2") return L2_FREQ_GLO;
+        else if (type == "L3" || type == "C3") return L3_FREQ_GLO;
+    } else if (sys == "J") {
+        if (type == "L1" || type == "C1") return L1_FREQ_QZSS;
+        else if (type == "L2" || type == "C2") return L2_FREQ_QZSS;
+        else if (type == "L5" || type == "C5") return L5_FREQ_QZSS;
+    } else if (sys == "I") {
+        if (type == "L1" || type == "C1") return L1_FREQ_IRNSS;
+        else if (type == "L5" || type == "C5") return L5_FREQ_IRNSS;
     } else {
-        std::cerr << "don't support system except GPS and Beidou" << endl;
+        std::cerr << "getFreq: don't support system " << sys << endl;
     }
     return 0.0;
 }

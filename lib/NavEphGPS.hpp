@@ -23,8 +23,9 @@
 
 #include "TimeConvert.h"
 #include "GnssStruct.h"
+#include "NavEphBase.hpp"
 
-class NavEphGPS {
+class NavEphGPS : public NavEphBase {
 public:
     /// Default constuctor
     NavEphGPS(void)
@@ -51,7 +52,7 @@ public:
 
     /// Compute satellite relativity correction (sec) at the given time
     /// throw Invalid Request if the required data has not been stored.
-    double svRelativity(const CommonTime &t) const;
+    long double svRelativity(const CommonTime &t) const;
 
     /// return URA of broadcast
     double svURA(const CommonTime &t) const;
@@ -116,6 +117,10 @@ public:
     CommonTime transmitTime;   ///< Transmission time in CommonTime form
     CommonTime beginValid;     ///< Time at beginning of validity
     CommonTime endValid;       ///< Time at end of fit validity
+
+/// 实现 NavEphBase 接口
+    virtual TimeSystem getTimeSystem() const override { return TimeSystem::GPS; }
+    virtual std::string getSystemCode() const override { return "G"; }
 
 private:
     /// Get the fit interval in hours from the fit interval flag and the IODC

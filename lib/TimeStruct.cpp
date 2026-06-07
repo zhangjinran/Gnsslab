@@ -27,6 +27,7 @@ const string TimeSystem::sys_strings[count] = {
         "GAL", // Galileo system time
         "BDT", // BDS system time
         "QZS", // qzss time
+        "IRN", // IRNSS system time
         "UTC", // utc
         "TAI",
         "TT"
@@ -256,42 +257,25 @@ bool WeekSecond::operator>=(const WeekSecond &right) const {
     return (!operator<(right));
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ==================== WeekSecond Factory Function Implementation ====================
+WeekSecond* createWeekSecond(TimeSystem::SystemType sys,
+                            unsigned int week,
+                            double sow)
+{
+    switch(sys) {
+        case TimeSystem::GPS:
+            return new GPSWeekSecond(week, sow, TimeSystem::GPS);
+        case TimeSystem::BDT:
+            return new BDTWeekSecond(week, sow, TimeSystem::BDT);
+        case TimeSystem::GAL:
+            return new GALWeekSecond(week, sow, TimeSystem::GAL);
+        case TimeSystem::GLO:
+            return new GLOWeekSecond(week, sow, TimeSystem::GLO);
+        case TimeSystem::QZS:
+            return new QZSWeekSecond(week, sow, TimeSystem::QZS);
+        case TimeSystem::IRN:
+            return new IRNWeekSecond(week, sow, TimeSystem::IRN);
+        default:
+            return new GPSWeekSecond(week, sow, TimeSystem::GPS);
+    }
+}

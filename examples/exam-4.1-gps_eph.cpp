@@ -44,6 +44,33 @@ int main(int argc,char* argv[]) {
     std::string navfile="/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/BRDC00IGS_R_20250010000_01D_MN.rnx";
     RinexNavStore navStore;
     navStore.loadFile(navfile);
+    
+    // 调试：打印 ionoCorrData 的内容
+    std::cout << "\n=== Ionosphere Correction Data ===" << std::endl;
+    for (const auto& ionoEntry : navStore.ionoCorrData) {
+        std::cout << "Type: " << ionoEntry.first << " -> ";
+        for (size_t i = 0; i < ionoEntry.second.size(); i++) {
+            std::cout << ionoEntry.second[i];
+            if (i < ionoEntry.second.size() - 1) std::cout << ", ";
+        }
+        std::cout << std::endl;
+    }
+    
+    // 调试：打印 BDS专用电离层参数（按SatID）
+    std::cout << "\n=== BDS Ionosphere Correction Data (by SatID) ===" << std::endl;
+    for (const auto& entry : navStore.ionoCorrDataBDS) {
+        const SatID& sat = entry.first;
+        const auto& param = entry.second;
+        std::cout << "SatID: " << sat.toString() << std::endl;
+        if (param.hasAlpha) {
+            std::cout << "  Alpha: [" << param.alpha[0] << ", " << param.alpha[1] 
+                      << ", " << param.alpha[2] << ", " << param.alpha[3] << "]" << std::endl;
+        }
+        if (param.hasBeta) {
+            std::cout << "  Beta:  [" << param.beta[0] << ", " << param.beta[1] 
+                      << ", " << param.beta[2] << ", " << param.beta[3] << "]" << std::endl;
+        }
+    }
 
     string sp3File = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/COD0MGXFIN_20250010000_01D_05M_ORB.SP3";
     SP3Store sp3Store;

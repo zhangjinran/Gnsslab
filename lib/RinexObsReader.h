@@ -23,66 +23,76 @@
 class RinexObsReader {
 public:
     RinexObsReader()
-    : pFileStream(NULL), isHeaderRead(false)
+        : pFileStream(nullptr), isHeaderRead(false), ownStream(false), currentLine(0)
     {};
 
-    void setFileStream(std::fstream* pStream)
-    {
-        pFileStream = pStream;
-    };
+    RinexObsReader(const RinexObsReader& other) = delete;
+    RinexObsReader& operator=(const RinexObsReader& other) = delete;
+
+    RinexObsReader(RinexObsReader&& other) noexcept;
+    RinexObsReader& operator=(RinexObsReader&& other) noexcept;
+
+    ~RinexObsReader();
+
+    bool loadFile(const std::string& filePath);
+
+    void setFileStream(std::fstream* pStream, bool takeOwnership = false);
 
     void setSelectedTypes(std::map<string, std::set<string>>& systemTypes)
     {
         sysTypes = systemTypes;
     };
+    std::map<string, std::set<string>> getSystemTypes() const { return sysTypes; }
+
 
     void parseRinexHeader();
     ObsData parseRinexObs();
 
     ObsData parseRinexObs(CommonTime& syncEpoch)
     {
-        // store current stream pos;
-        streampos sp( pFileStream->tellg() );
+        streampos sp(pFileStream->tellg());
         ObsData obsData;
         while(true){
-            if( pFileStream->peek() == EOF ){
+            if(pFileStream->peek() == EOF){
                 break;
             }
-            // read a record from current strm;
             obsData = parseRinexObs();
-
-            // 首先寻找大于等于参考时刻的历元
-            // 只要大于等于，就意味着时间是同步的或者是超过了给定参考时刻的
-            if(obsData.epoch >=syncEpoch)
+            if(obsData.epoch >= syncEpoch)
             {
                 break;
             }
         }
-        // 如果流动站的时刻大于给定的参考时刻+容许的误差，则说明流动站观测值超前了，
-        // 此时，同步失败，且要把流动站的流重置到文件开头，以实现下一个历元的同步。
-        if(obsData.epoch > (syncEpoch + 0.001) )
+        if(obsData.epoch > (syncEpoch + 0.001))
         {
-            pFileStream->seekg( sp );
-            SyncException e("Rx3ObsData::can't synchronize the obs!");
+            pFileStream->seekg(sp);
+            SyncException e("Rx3ObsData::can't synchronize the obs at line " + std::to_string(currentLine));
             throw(e);
         }
-
         return obsData;
     };
 
     CommonTime parseTime(const string &line);
     void chooseObs(ObsData &obsData);
-    ///统计函数，来对obsData中的数据进行统计
-    void static_Obs(ObsData &obsData,ObsDataStaticSum* obs_data_static_sum);
+    void static_Obs(ObsData &obsData, ObsDataStaticSum* obs_data_static_sum);
+    
+    // 统计指定系统中同时有两种观测码的卫星数量
+    int countDualCodeSatellites(ObsData &obsData, const std::string& system, 
+                                const std::string& code1, const std::string& code2);
 
-    ~RinexObsReader()
-    {};
+    bool isOpen() const { return pFileStream && *pFileStream; }
+    const RinexHeader& getHeader() const { return rinexHeader; }
+    size_t getCurrentLine() const { return currentLine; }
 
 private:
     std::fstream* pFileStream;
     RinexHeader rinexHeader;
     std::map<string, std::set<string>> sysTypes;
+    std::set<std::string> allowedSystems;
     bool isHeaderRead;
+    bool ownStream;
+    size_t currentLine;
+
+    bool isSystemAllowed(const std::string& system) const;
 };
 
 

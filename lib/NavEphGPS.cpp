@@ -90,7 +90,7 @@ double NavEphGPS::svClockDrift(const CommonTime &t) const {
 
 // Compute satellite relativity correction (sec) at the given time
 // throw Invalid Request if the required data has not been stored.
-double NavEphGPS::svRelativity(const CommonTime &t) const {
+long double NavEphGPS::svRelativity(const CommonTime &t) const {
     GPSEllipsoid ell;
     ///Semi-major axis
     double A = sqrt_A * sqrt_A;
@@ -263,8 +263,7 @@ Xvt NavEphGPS::svXvt(const CommonTime &t) const {
 }
 
 bool NavEphGPS::isValid(const CommonTime &ct) const {
+    if (ct.m_timeSystem != TimeSystem::GPS) return false;
     if (ct < beginValid || ct > endValid) return false;
     return true;
 }
-
-

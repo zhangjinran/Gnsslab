@@ -2,25 +2,16 @@
  * Copyright:
  *  This software is licensed under the Mulan Permissive Software License, Version 2 (MulanPSL-2.0).
  *  You may obtain a copy of the License at:http://license.coscl.org.cn/MulanPSL2
- *  As stipulated by the MulanPSL-2.0, you are granted the following freedoms:
- *      To copy, use, and modify the software;
- *      To use the software for commercial purposes;
- *      To redistribute the software.
- *
- * Author: shoujian zhang，shjzhang@sgg.whu.edu.cn， 2024-10-10
- *
- * References:
- * 1. Sanz Subirana, J., Juan Zornoza, J. M., & Hernández-Pajares, M. (2013).
- *    GNSS data processing: Volume I: Fundamentals and algorithms. ESA Communications.
- * 2. Eckel, Bruce. Thinking in C++. 2nd ed., Prentice Hall, 2000.
  */
-
 
 #include <string>
 #include <fstream>
 #include <iostream>
 #include <cstring>
 #include <set>
+#include <map>
+#include <vector>
+#include <iomanip>
 #include "GnssStruct.h"
 #include "TimeConvert.h"
 #include "GnssFunc.h"
@@ -28,116 +19,179 @@
 #include "RinexObsReader.h"
 #include "SPPIFCode.h"
 
-#define debug 1
+#define debug 0
 
 using namespace std;
 
-int main() {
+// 系统名称到系统代码的映射
+std::map<std::string, std::string> sysNameMap = {
+    {"GPS", "G"},
+    {"BDS", "C"},
+    {"Galileo", "E"},
+    {"GLONASS", "R"},
+    {"QZSS", "J"},
+    {"IRNSS", "I"}
+};
 
-    //--------------------
-    // 打开文件流
-    //--------------------
-
-    // Replace with your actual RINEX file path
-    string dirPath = "D:\\documents\\Source\\gnssLab-2.2\\data\\Zero-baseline\\";
-//    string dirPath = "D:\\documents\\Source\\gnssLab-2.1\\data\\";
-
-    // rover obs file name
-    std::string roverFile = dirPath + "oem719-202203031500-1.obs";
-    //std::string roverFile = dirPath + "ABMF00GLP_R_20210010000_01D_30S_MO.rnx";
-
-    cout << roverFile << endl;
-
-    // nav file name, download from IGS ftp site:ftp://gssc.esa.int/gnss/data/daily/YYYY/brdc
-    std::string navFile = dirPath + "BRDC00IGS_R_20220620000_01D_MN.rnx";
-   // std::string navFile = dirPath + "ABMF00GLP_R_20210010000_01D_MN.rnx";
-
-    // 2022 03 03 06 48 37.0000000  0 45
-    CivilTime stopCivilTime = CivilTime(2022, 03, 03, 06, 48 , 37);
-    //   CivilTime stopCivilTime = CivilTime(2021, 01, 01, 10, 00 , 00);
-
-    CommonTime stopEpoch = CivilTime2CommonTime(stopCivilTime);
-
-    std::fstream roverObsStream(roverFile);
-    if (!roverObsStream) {
-        cerr << "rover file open error!" << strerror(errno) << endl;
-        exit(-1);
+// 运行单个系统的 SPP IF 测试
+void runSingleSystemSPPIF(const string& system, 
+                          const string& roverFile, 
+                          const string& navFile,
+                          const string& outputPath,
+                          const std::map<string, std::pair<string, string>>& ifCodeTypes,
+                          const std::map<string, std::set<string>>& selectedTypes,
+                          bool tgdCorrect, 
+                          bool tropCorrect) {
+    
+    std::cout << "\n--- " << system << " IF Test ---" << std::endl;
+    
+    auto it = sysNameMap.find(system);
+    if (it == sysNameMap.end()) {
+        std::cerr << "Unknown system: " << system << std::endl;
+        return;
+    }
+    std::string sysCode = it->second;
+    
+    // 构建输出文件名
+    std::string atmosFlag = "";
+    if (!tgdCorrect && !tropCorrect) {
+        atmosFlag = "_no_atmos";
+    } else if (tgdCorrect && !tropCorrect) {
+        atmosFlag = "_tgd_only";
+    } else if (!tgdCorrect && tropCorrect) {
+        atmosFlag = "_trop_only";
+    } else {
+        atmosFlag = "_full_atmos";
     }
     
-    // read nav file data before rtk
-    RinexNavStore navStore;
-    navStore.loadFile(navFile);
-
-    cout << "after NavStore" << endl;
-
-    std::map<string, std::set<string>> selectedTypes;
-    selectedTypes["G"].insert("C1C");
-    selectedTypes["G"].insert("C2W");
-    selectedTypes["G"].insert("L1C");
-    selectedTypes["G"].insert("L2W");
-
-
-    std::map<string, std::pair<string, string>> ifCodeTypes;
-    ifCodeTypes["G"].first = "C1";
-    ifCodeTypes["G"].second = "C2";
-
-    //-------------------
-    // 定义数据处理的对象
-    //-------------------
-    //>>> classes for rover
-    RinexObsReader readObsRover;
-    readObsRover.setFileStream(&roverObsStream);
-    readObsRover.setSelectedTypes(selectedTypes);
-
-    SPPIFCode sppif;
-    sppif.setRinexNavStore(&navStore);
-    sppif.setIFCodeTypes(ifCodeTypes);
+    std::string solFile = outputPath + "sppif_" + system + atmosFlag + ".out";
     
-    //>>> classes for rtk;    
-    SolverLSQ solver;
-
-
-    std::string solFile = roverFile + ".spp.out";
-    if(debug)
-        cout << solFile << endl;
-
+    // 创建导航数据对象
+    static std::map<std::string, RinexNavStore> navStoreMap;
+    RinexNavStore* pNavStore;
+    
+    auto navIt = navStoreMap.find(navFile);
+    if (navIt == navStoreMap.end()) {
+        RinexNavStore& newStore = navStoreMap[navFile];
+        if (!newStore.loadFile(const_cast<string&>(navFile))) {
+            std::cerr << "Error loading nav file for " << system << std::endl;
+            return;
+        }
+        pNavStore = &newStore;
+    } else {
+        pNavStore = &(navIt->second);
+    }
+    
+    // 创建并配置 SPPIF 对象
+    SPPIFCode sppif;
+    sppif.setSystemCode(sysCode);
+    sppif.setSelectedTypes(selectedTypes);  // 设置要读取的观测类型
+    
+    // 调用 full_solve 获取结果
+    std::vector<SPPIFResult> results = sppif.full_solve(pNavStore, ifCodeTypes, const_cast<string&>(roverFile), tgdCorrect, tropCorrect);
+    
+    // 输出到文件（exam5.3 格式）
     std::fstream solStream(solFile, ios::out);
     if (!solStream) {
-        cerr << "solution file open error!" << strerror(errno) << endl;
-        exit(-1);
+        std::cerr << "Error opening output file: " << solFile << std::endl;
+        return;
     }
-
-    while (true) {
-
-        // solve spp for rover
-        ObsData roverData;
-
-        try {
-            roverData = readObsRover.parseRinexObs();
-            cout << "roverData:" << roverData << endl;
-        }
-        catch (EndOfFile &e) { break; }
-
-        CommonTime epoch = roverData.epoch;
-
-        // 最小二乘
-        sppif.solve(roverData);
-        EquSys equSysRover = sppif.getEquSys();
-        Vector3d xyzRover = sppif.getXYZ();
-
-        cout << "sppif:" << CommonTime2YDSTime(epoch) << xyzRover.transpose() << endl;
-
-        // print solution to files
-        printSolution(solStream, epoch, xyzRover);
-
-        // 调试代码时，设置一个stopEpoch，有助于快速得到结果
-        if (roverData.epoch > stopEpoch)
-            break;
-
+    
+    // 文件头
+    solStream << "# YDSTime X Y Z E N U PDOP NSAT Sigma0 MeanResidual RMSResidual MaxResidual" << std::endl;
+    
+    // 输出数据
+    for (const auto& result : results) {
+        solStream << result.ydsTime
+                  << " " << std::fixed << std::setprecision(3) << result.xyz.transpose()
+                  << " " << std::fixed << std::setprecision(3) << result.enu.transpose()
+                  << " " << std::fixed << std::setprecision(2) << result.pdop
+                  << " " << result.nSat
+                  << " " << std::fixed << std::setprecision(3) << result.sigma0
+                  << " " << std::fixed << std::setprecision(3) << result.meanResidual
+                  << " " << std::fixed << std::setprecision(3) << result.rmsResidual
+                  << " " << std::fixed << std::setprecision(3) << result.maxResidual
+                  << std::endl;
     }
-
-    roverObsStream.close();
+    
     solStream.close();
-
+    std::cout << system << " " << atmosFlag << " -> " << solFile << std::endl;
 }
 
+int main() {
+    std::cout << "=== SPP IF Combination Test ===" << std::endl;
+    
+    // 文件路径配置
+    string dirPath = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/";
+    std::string roverFile = dirPath + "WUH200CHN_R_20250010000_01D_30S_MO.rnx";
+    std::string navFile = dirPath + "BRDC00IGS_R_20250010000_01D_MN.rnx";
+    
+    std::cout << "Rover file: " << roverFile << std::endl;
+    std::cout << "Nav file: " << navFile << std::endl;
+    
+    // 设置输出路径
+    std::string outputPath = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/sppif/";
+    std::string cmd = "mkdir -p " + outputPath;
+    system(cmd.c_str());
+    
+    // 测试模式
+    std::vector<std::pair<bool, bool>> testModes = {
+        {true, true},   // TGD + Trop
+        {false, false},  // 无校正
+        {true, false},   // 仅 TGD
+        {false, true},   // 仅 Trop
+    };
+    // ==================== GLONASS 单系统测试 ====================
+    std::cout << "\n=== GLONASS Single System Tests ===" << std::endl;
+    std::map<string, std::pair<string, string>> gloIfCodeTypes = {
+        {"R", {"C1", "C2"}}  // GLONASS L1 + L2 做 IF 组合
+    };
+    std::map<string, std::set<string>> gloSelectedTypes = {
+        {"R", {"C1C", "C2C"}}  // 读取 GLONASS 的这些观测类型
+    };
+    for (const auto& mode : testModes) {
+        runSingleSystemSPPIF("GLONASS", roverFile, navFile, outputPath, gloIfCodeTypes, gloSelectedTypes, mode.first, mode.second);
+    }
+    // ==================== GPS 单系统测试 ====================
+    std::cout << "\n=== GPS Single System Tests ===" << std::endl;
+    std::map<string, std::pair<string, string>> gpsIfCodeTypes = {
+        {"G", {"C1", "C2"}}  // GPS L1 + L2 做 IF 组合
+    };
+    std::map<string, std::set<string>> gpsSelectedTypes = {
+        {"G", {"C1W", "C2W", "L1C", "L2W"}}  // 读取 GPS 的这些观测类型
+    };
+    for (const auto& mode : testModes) {
+        runSingleSystemSPPIF("GPS", roverFile, navFile, outputPath, gpsIfCodeTypes, gpsSelectedTypes, mode.first, mode.second);
+    }
+
+    // ==================== BDS 单系统测试 ====================
+    std::cout << "\n=== BDS Single System Tests ===" << std::endl;
+    std::map<string, std::pair<string, string>> bdsIfCodeTypes = {
+        {"C", {"C1", "C5"}}  // BDS B1I + B2I 做 IF 组合
+    };
+    std::map<string, std::set<string>> bdsSelectedTypes = {
+        {"C", {"C1X", "C5X"}}  // 读取 BDS 的这些观测类型
+    };
+    for (const auto& mode : testModes) {
+        runSingleSystemSPPIF("BDS", roverFile, navFile, outputPath, bdsIfCodeTypes, bdsSelectedTypes, mode.first, mode.second);
+    }
+
+
+
+    // ==================== Galileo 单系统测试 ====================
+    std::cout << "\n=== Galileo Single System Tests ===" << std::endl;
+    std::map<string, std::pair<string, string>> galIfCodeTypes = {
+        {"E", {"C1", "C5"}}  // Galileo E1 + E5a 做 IF 组合
+    };
+    std::map<string, std::set<string>> galSelectedTypes = {
+        {"E", {"C1X", "C5X"}}  // 读取 Galileo 的这些观测类型
+    };
+    for (const auto& mode : testModes) {
+        runSingleSystemSPPIF("Galileo", roverFile, navFile, outputPath, galIfCodeTypes, galSelectedTypes, mode.first, mode.second);
+    }
+
+    std::cout << "\n=== All SPP IF tests completed ===" << std::endl;
+    std::cout << "Results saved to: " << outputPath << std::endl;
+    
+    return 0;
+}

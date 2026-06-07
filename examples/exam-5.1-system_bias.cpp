@@ -27,8 +27,9 @@
 #include "RinexNavStore.hpp"
 #include "RinexObsReader.h"
 #include "SPPIFCode.h"
+#include "write.h"
 
-#define debug 1
+#define debug 0
 
 using namespace std;
 
@@ -44,7 +45,7 @@ int main() {
 
     // rover obs file name
     std::string roverFile = dirPath + "WUH200CHN_R_20250010000_01D_30S_MO.rnx";
-    cout << roverFile << endl;
+    //cout << roverFile << endl;
 
     // nav file name, download from IGS ftp site:ftp://gssc.esa.int/gnss/data/daily/YYYY/brdc
     std::string navFile = dirPath + "BRDC00IGS_R_20250010000_01D_MN.rnx";
@@ -80,16 +81,26 @@ int main() {
     readObsRover.setFileStream(&roverObsStream);
     readObsRover.setSelectedTypes(selectedTypes);
 
+    std::map<CommonTime,std::map<SatID, double>> IonoDelay;
+    std::map<CommonTime, std::map<SatID, double>> TropDelay;
+    int count =0;
     while (true) {
 
         // solve spp for rover
         ObsData roverData;
 
         try {
+            if (count>=614)
+                cout << count << endl;
+
             roverData = readObsRover.parseRinexObs();
-            //cout << "roverData:" << roverData << endl;
+
+            if (count>=180)
+                cout<<roverData<<endl;
         }
         catch (EndOfFile &e) { break; }
+        //if (roverData.satTypeValueData.empty())
+          //  break;
 
         CommonTime epoch = roverData.epoch;
         //----------------------
@@ -98,14 +109,11 @@ int main() {
         //----------------------
         convertObsType(roverData);
 
-        // if (debug) {
-        //     cout << "after convertObsType" << endl;
-        //     cout << roverData << endl;
-        // }
-
         // 计算发射时刻卫星位置（参考框架为时刻的）
+        CivilTime civil_time=CommonTime2CivilTime(epoch);
         std::map<SatID, Xvt> satXvtTransTime = computeSatPos(roverData, navStore,0);
         std::map<SatID, Xvt> satXvtTransTimeIF = computeSatPos(roverData, navStore,1);
+        writefileSatPos(satXvtTransTime, satXvtTransTimeIF, civil_time, "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/satXvtTransTime_IF.txt");
 
         if (debug) {
             cout << "satXvtTransTime  " << CommonTime2CivilTime(roverData.epoch) << endl;
@@ -128,8 +136,8 @@ int main() {
         //----------------------
         // 得到卫星发射时刻位置和钟差、相对论和TGD后，改正观测值延迟，并更新C1/C2等观测值
         //----------------------
-        // todo:
-        // correctTGD(obsData);
+        //
+        //correctTGD(obsData);
 
         Vector3d xyz = roverData.antennaPosition;
         std::map<SatID, Xvt> satXvtRecTime = earthRotation(xyz, satXvtTransTime);
@@ -147,34 +155,28 @@ int main() {
         SatValueMap satElevData, satAzimData;
         // 地球表面才计算高度角和大气改正
         if (std::abs(xyz.norm() - RadiusEarth) < 100000.0) {
-            satElevData.clear();
-            satAzimData.clear();
-            // if (debug)
-            //     cout << "computeElevAzim" << endl;
+             satElevData.clear();
+             satAzimData.clear();
+             computeElevAzim(xyz, satXvtRecTime, satElevData, satAzimData);
 
-            computeElevAzim(xyz, satXvtRecTime, satElevData, satAzimData);
+             std::map<SatID, double> ionodelay;
+             std::map<SatID, double> tropdelay;
 
-            // if (debug) {
-            //     cout << "satElevData:" << endl;
-            //     cout << satElevData << endl;
-            //     cout << "satAzimData:" << endl;
-            //     cout << satAzimData << endl;
-            // }
+             ionodelay=ionoDelay(xyz, epoch, satElevData, satAzimData,navStore);
+             tropdelay=tropDelay(xyz,satElevData,0.5);
+             cout<<"epoch:"<<epoch<<endl;
+             IonoDelay[roverData.epoch]=ionodelay;
+            TropDelay[roverData.epoch]=tropdelay;
+            count++;
 
-
-            // todo:
-
-            ionoDelay(xyz, epoch, satElevData, satAzimData,navStore);
-            tropDelay(xyz,satElevData,0.5);
-            cout<<"epoch:"<<epoch<<endl;
-        }
+         }
 
         // 调试代码时，设置一个stopEpoch，有助于快速得到结果
-        if (roverData.epoch > stopEpoch)
-            break;
+
     }
+    writeDelay(IonoDelay,"IonoDelay");
+    writeDelay(TropDelay,"TropDelay");
 
     roverObsStream.close();
 
 };
-

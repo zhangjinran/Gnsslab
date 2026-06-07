@@ -38,21 +38,58 @@
 struct SatID {
     string system;
     int id;
-
-    //
-    // todo:
-    // 增加这个字段，实现北斗2代和北斗3代的区分，
-    // 在后面星间差分观测值构建时，需要考虑北斗2和北斗3接收机钟差不同
-    // 引起的模型差异
-    // int generation;
+    int generation;  // 卫星世代：0=未知, 1=北斗2代, 2=北斗3代
 
     // 构造函数
-    SatID() : system(""), id(-1) {}
+    SatID() : system(""), id(-1), generation(0) {}
 
     // 从字符串构造函数
     SatID(string satStr) {
+        // 验证输入字符串长度至少为3（如 "G15", "C03"）
+        if (satStr.length() < 3) {
+            throw std::invalid_argument("SatID: Invalid satellite string format. Expected at least 3 characters, got " + std::to_string(satStr.length()));
+        }
+
+        // 提取系统标识（第一个字符）
         system = satStr.substr(0, 1);
-        id = stoi(satStr.substr(1, 2));
+
+        // 验证系统标识是否有效
+        std::string validSystems = "GCREJIS";
+        if (validSystems.find(system) == std::string::npos) {
+            throw std::invalid_argument("SatID: Invalid satellite system identifier '" + system + "'. Valid systems: G(CREJIS)");
+        }
+
+        // 提取卫星ID（后面的数字部分）
+        std::string idStr = satStr.substr(1);
+        
+        // 验证卫星ID是否为有效数字
+        try {
+            id = std::stoi(idStr);
+        } catch (const std::invalid_argument& e) {
+            throw std::invalid_argument("SatID: Invalid satellite ID number '" + idStr + "'");
+        } catch (const std::out_of_range& e) {
+            throw std::invalid_argument("SatID: Satellite ID number '" + idStr + "' is out of range");
+        }
+
+        // 验证卫星ID范围（通常为1-64）
+        if (id < 1 || id > 64) {
+            throw std::invalid_argument("SatID: Satellite ID " + std::to_string(id) + " is out of valid range [1, 64]");
+        }
+
+        // 根据卫星ID确定北斗世代
+        // 北斗2代（BDS-2）: C01-C14
+        // 北斗3代（BDS-3）: C19-C60+
+        if (system == "C") {
+            if (id >= 1 && id <= 14) {
+                generation = 1;  // 北斗2代
+            } else if (id >= 19) {
+                generation = 2;  // 北斗3代
+            } else {
+                generation = 0;  // 未知（如 C15-C18 预留）
+            }
+        } else {
+            generation = 0;  // 非北斗系统，世代为0
+        }
     }
 
     // Overload the equality operator as a member function
@@ -70,6 +107,16 @@ struct SatID {
         if (this->system != other.system)
             return this->system < other.system;
         return this->id < other.id;
+    }
+
+    // Overload the assignment operator
+    SatID& operator=(const SatID& other) {
+        if (this != &other) {
+            this->system = other.system;
+            this->id = other.id;
+            this->generation = other.generation;
+        }
+        return *this;
     }
 
     std::string toString() const {
@@ -211,16 +258,31 @@ inline std::ostream &operator<<(std::ostream &os, const ObsDataStatic &data) {
 
 ///对于每一个历元的输出进行重载。
 inline std::ostream &operator<<(std::ostream &os, const ObsDataStaticSum &data) {
-
-    os << "Epoch: " << data.epochSum << "\n";
-    os<< "Satellite Count: " << data.SatelliteSum << "\n";
-    for (auto it:data.obsTypeSum) {
-        os<<"System:"<<it.first<<"\n";
-        for (auto its:it.second) {
-            os<<"  Type:"<<its.first<<",Count:"<<its.second<<endl;
+    os << "+--------------------------------------------------+\n";
+    os << "|              观测数据统计摘要                      |\n";
+    os << "+--------------------------------------------------+\n";
+    os << "| 总历元数: " << std::setw(10) << data.epochSum << "                  |\n";
+    os << "| 总卫星数: " << std::setw(10) << data.SatelliteSum << "                  |\n";
+    os << "+--------------------------------------------------+\n";
+    
+    for (const auto& it : data.obsTypeSum) {
+        os << "| 系统 " << it.first << ":\n";
+        os << "|   观测类型统计:\n";
+        
+        int typeCount = 0;
+        int totalObs = 0;
+        for (const auto& its : it.second) {
+            typeCount++;
+            totalObs += its.second;
+            os << "|     " << std::setw(5) << its.first << ": " 
+               << std::setw(8) << its.second << " 个观测值\n";
         }
-
+        
+        os << "|   合计: " << typeCount << " 种观测类型, " 
+           << totalObs << " 个观测值\n";
+        os << "+--------------------------------------------------+\n";
     }
+    
     return os;
 }
 
@@ -267,7 +329,7 @@ public:
     double getClockDrift() throw() { return clkdrift; }
 
     /// access the relativity correction, in seconds
-    double getRelativityCorr() throw() { return relcorr; }
+    long double getRelativityCorr() throw() { return relcorr; }
 
     // member data
 
@@ -275,7 +337,7 @@ public:
     Eigen::Vector3d v;   ///< satellite velocity in ECEF Cartesian, meters/second
     double clkbias;      ///< Sat clock correction in seconds
     double clkdrift;     ///< satellite clock drift in seconds/second
-    double relcorr;
+    long double relcorr; ///< relativity correction in seconds (high precision)
     std::map<string, double> typeTGDData;
 
 }; // end class Xvt
@@ -283,13 +345,13 @@ public:
 // Output operator for Xvt
 inline std::ostream &operator<<(std::ostream &os, Xvt &xvt)
 throw() {
-    os << setprecision(10) << "x:" << xvt.x.transpose() << endl;
-    os << "v:" << xvt.v.transpose() << endl;
-    os << "clk bias:" << xvt.clkbias << endl;
-    os << "clk drift:" << xvt.clkdrift << endl;
-    os << "relcorr:" << xvt.relcorr << endl;
+    os << setprecision(10) << "x: " << xvt.x.transpose() << ' ';
+    os << "v: " << xvt.v.transpose() << ' ';
+    os << "clk bias: " << xvt.clkbias << ' ';
+    os << "clk drift: " << xvt.clkdrift << ' ';
+    os << "relcorr: " << xvt.relcorr << endl;
     for(auto tv: xvt.typeTGDData)
-        os << tv.first << "tgd:" << tv.second << endl;
+        os << tv.first << "tgd: " << tv.second << endl;
     return os;
 }
 
@@ -299,7 +361,7 @@ throw() {
 class Parameter {
 public:
     enum ParameterName { // 显式指定底层类型为int
-        Unknown = 0, dX, dY, dZ, cdt, ifb, iono, ambiguity, count
+        Unknown = 0, dX, dY, dZ, cdt, cdt_BDS, cdt_GAL, cdt_GLO, cdt_QZS, cdt_IRN,ifb, iono, ambiguity, bias,count
     };
 
     Parameter() {}
@@ -401,6 +463,10 @@ public:
              Parameter _paraName,
              ObsID _obsid)
             : station(_station), sat(_sat), obsID(_obsid), paraName(_paraName) {}
+    Variable(const std::string _station,
+           const SatID _sat,
+           Parameter _paraName)
+          : station(_station), sat(_sat), paraName(_paraName) {}
 
     Variable &operator=(const Variable &right) {
         if (this != &right) {
@@ -413,8 +479,8 @@ public:
     }
 
     bool operator<(const Variable &right) const;
-    bool operator==(const Variable &right);
-    bool operator!=(const Variable &right);
+    bool operator==(const Variable &right) const;
+    bool operator!=(const Variable &right) const;
 
     // Getter方法
 
@@ -512,6 +578,7 @@ struct EquSys
 {
     // 每个观测方程的未知参数和系数及先验残差
     string station;
+    std::vector<SatID> satList;
     std::map<EquID, EquData> obsEquData;
     // 整个方程系统的所有未知参数
     VariableSet varSet;
@@ -542,9 +609,3 @@ struct ContrastData {
 
 
 };
-
-
-
-
-
-

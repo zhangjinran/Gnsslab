@@ -61,7 +61,7 @@ double convertHMS2SOD(int hh,
 CommonTime CivilTime2CommonTime(const CivilTime &civilt);
 CivilTime CommonTime2CivilTime(const CommonTime &ct);
 CommonTime JulianDate2CommonTime(JulianDate &jd);
-JulianDate CommonTime2JulianDate(CommonTime &ct);
+JulianDate CommonTime2JulianDate(const CommonTime &ct);
 void CommonTime2MJD(const CommonTime& ct, MJD& mjd );
 void MJD2CommonTime(MJD& mjd, CommonTime& ct);
 CommonTime YDSTime2CommonTime(YDSTime &ydst);

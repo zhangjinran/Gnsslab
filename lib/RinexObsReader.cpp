@@ -25,6 +25,70 @@
 #include "TimeConvert.h"
 
 #define debug 0
+
+RinexObsReader::~RinexObsReader() {
+    if (ownStream && pFileStream) {
+        delete pFileStream;
+        pFileStream = nullptr;
+    }
+}
+
+RinexObsReader::RinexObsReader(RinexObsReader&& other) noexcept
+    : pFileStream(other.pFileStream),
+      rinexHeader(std::move(other.rinexHeader)),
+      sysTypes(std::move(other.sysTypes)),
+      isHeaderRead(other.isHeaderRead),
+      ownStream(other.ownStream),
+      currentLine(other.currentLine) {
+    other.pFileStream = nullptr;
+    other.ownStream = false;
+}
+
+RinexObsReader& RinexObsReader::operator=(RinexObsReader&& other) noexcept {
+    if (this != &other) {
+        if (ownStream && pFileStream) {
+            delete pFileStream;
+        }
+        pFileStream = other.pFileStream;
+        rinexHeader = std::move(other.rinexHeader);
+        sysTypes = std::move(other.sysTypes);
+        isHeaderRead = other.isHeaderRead;
+        ownStream = other.ownStream;
+        currentLine = other.currentLine;
+        other.pFileStream = nullptr;
+        other.ownStream = false;
+    }
+    return *this;
+}
+
+bool RinexObsReader::loadFile(const std::string& filePath) {
+    if (ownStream && pFileStream) {
+        delete pFileStream;
+    }
+    pFileStream = new std::fstream(filePath, std::ios::in);
+    ownStream = true;
+    isHeaderRead = false;
+    currentLine = 0;
+    
+    if (!*pFileStream) {
+        delete pFileStream;
+        pFileStream = nullptr;
+        ownStream = false;
+        return false;
+    }
+    return true;
+}
+
+void RinexObsReader::setFileStream(std::fstream* pStream, bool takeOwnership) {
+    if (ownStream && pFileStream) {
+        delete pFileStream;
+    }
+    pFileStream = pStream;
+    ownStream = takeOwnership;
+    isHeaderRead = false;
+    currentLine = 0;
+}
+
 void RinexObsReader::parseRinexHeader() {
     double version;
     XYZ antennaPosition;
@@ -35,6 +99,7 @@ void RinexObsReader::parseRinexHeader() {
     while (true) {
         string line;
         if (!getline(*pFileStream, line)) break;
+        currentLine++;
 
         string label = strip(line.substr(60, 20));
         if (debug) cout << "label: " << label << endl;
@@ -49,10 +114,9 @@ void RinexObsReader::parseRinexHeader() {
         }
         else if (label == "RINEX VERSION / TYPE") {
             version = safeStod(line.substr(0, 20));
-            // 支持 3.04 / 3.05
             if (version < 3.04 || version > 3.05) {
-                cerr << "Error: Only RINEX 3.04 / 3.05 supported!" << endl;
-                exit(-1);
+                throw FFStreamError("Error at line " + std::to_string(currentLine) + 
+                                   ": Only RINEX 3.04 / 3.05 supported! Version: " + std::to_string(version));
             }
             rinexHeader.version = version;
         }
@@ -69,7 +133,6 @@ void RinexObsReader::parseRinexHeader() {
                 satSys = sysStr;
                 mapObsTypes[satSys].clear();
             }
-            // 支持跨行、读满 numObs（适配3.05多类型）
             while (mapObsTypes[satSys].size() < numObs) {
                 int base = 7 ;
                 for (int i=0; i<13 && mapObsTypes[satSys].size()<numObs; i++) {
@@ -78,11 +141,11 @@ void RinexObsReader::parseRinexHeader() {
                 }
                 if (mapObsTypes[satSys].size() < numObs) {
                     if (!getline(*pFileStream, line)) break;
+                    currentLine++;
                 }
             }
             rinexHeader.mapObsTypes = mapObsTypes;
         }
-        // 可继续添加 3.05 新增头字段解析...
     }
 };
 
@@ -94,12 +157,12 @@ ObsData RinexObsReader::parseRinexObs() {
         isHeaderRead = true;
     }
 
-    // 读取观测值
     std::string line;
     getline(*pFileStream, line);
+    currentLine++;
 
     if ((*pFileStream).eof()) {
-        EndOfFile err("EOF encountered!");
+        EndOfFile err("EOF encountered at line " + std::to_string(currentLine));
         throw err;
     }
 
@@ -108,16 +171,14 @@ ObsData RinexObsReader::parseRinexObs() {
         std::cout << line << std::endl;
     }
 
-    // 检查并解析历元行
-    // 检查历元标记 ('>') 和随后的空格。
     if (line[0] != '>' || line[1] != ' ') {
-        FFStreamError e("Bad epoch line: >" + line + "<");
+        FFStreamError e("Bad epoch line at line " + std::to_string(currentLine) + ": >" + line + "<");
         throw e;
     }
 
     int epochFlag = safeStoi(line.substr(31, 1));
     if (epochFlag < 0 || epochFlag > 6) {
-        FFStreamError e("Invalid epoch flag: " + std::to_string(epochFlag));
+        FFStreamError e("Invalid epoch flag " + std::to_string(epochFlag) + " at line " + std::to_string(currentLine));
         throw e;
     }
 
@@ -130,37 +191,45 @@ ObsData RinexObsReader::parseRinexObs() {
 
     if (debug) cout << numSats << endl;
 
-    // 读取观测：SV ID 和数据
     SatTypeValueMap stvData;
-    if (epochFlag == 0 || epochFlag == 1 || epochFlag == 6) {
-
+    ObsData obsData;
+    if (epochFlag == 4) {
+        while (true) {
+            streampos pos = pFileStream->tellg();
+            getline(*pFileStream, line);
+            currentLine++;
+            line = line.substr(0, 1);
+            if (line[0] == '>') {
+                pFileStream->seekg(pos);
+                currentLine--;
+                break;
+            }
+        }
+        obsData = parseRinexObs();
+    }
+    else if (epochFlag == 0 || epochFlag == 1 || epochFlag == 6) {
         std::vector<SatID> satIndex(numSats);
         for (int isv = 0; isv < numSats; ++isv) {
-            getline(*pFileStream, line); // 修改了这里的变量名以匹配上下文
+            getline(*pFileStream, line);
+            currentLine++;
 
             if (debug) {
                 cout << "parseRinexObs:" << line << endl;
             }
 
             if ((*pFileStream).eof()) {
-                EndOfFile err("EOF encountered!");
+                EndOfFile err("EOF encountered at line " + std::to_string(currentLine));
                 throw err;
             }
 
-            // 获取 SV ID
             try {
                 satIndex[isv] = SatID(line.substr(0, 3));
             } catch (std::exception &e) {
-                FFStreamError ffse(e.what());
+                FFStreamError ffse("SatID parse error at line " + std::to_string(currentLine) + ": " + e.what());
                 throw ffse;
             }
 
             SatID sat = SatID(satIndex[isv]);
-
-            // // 如果卫星系统不是GPS("G")也不是北斗("C")，则跳过当前循环迭代。
-            // if (sat.system != "G" && sat.system != "C") {
-            //     continue;
-            // }
 
             int size = rinexHeader.mapObsTypes.at(satIndex[isv].system).size();
 
@@ -224,13 +293,14 @@ ObsData RinexObsReader::parseRinexObs() {
             stvData[satIndex[isv]] = typeObs;
 
         }
-    }
 
-    ObsData obsData;
-    obsData.station = rinexHeader.station;
-    obsData.epoch = currEpoch;
-    obsData.satTypeValueData = stvData;
-    obsData.antennaPosition = rinexHeader.antennaPosition;
+
+
+        obsData.station = rinexHeader.station;
+        obsData.epoch = currEpoch;
+        obsData.satTypeValueData = stvData;
+        obsData.antennaPosition = rinexHeader.antennaPosition;
+    }
 
     // choose observations you selected
     //chooseObs(obsData);
@@ -287,9 +357,10 @@ CommonTime RinexObsReader::parseTime(const string &line) {
 // 否则删除，因为涉及后续观测值基准选择问题；
 void RinexObsReader::chooseObs(ObsData &obsData) {
     SatTypeValueMap filteredSatTypeValueData;
-
-        cout << "before RinexObsReader::chooseObs" << endl;
-        cout<<obsData.satTypeValueData<<endl;
+if (debug) {
+    cout << "before RinexObsReader::chooseObs" << endl;
+    cout<<obsData.satTypeValueData<<endl;
+}
 
     // Iterate over all satellite entries in satTypeValueData
     for (const auto &satEntry: obsData.satTypeValueData) {
@@ -318,35 +389,106 @@ void RinexObsReader::chooseObs(ObsData &obsData) {
 
     // Replace the original data with the filtered data
     obsData.satTypeValueData.swap(filteredSatTypeValueData);
-
-        cout<<"after choose"<<endl;
-        cout<<obsData<<endl;
+if (debug) {
+    cout<<"after choose"<<endl;
+    cout<<obsData<<endl;
+}
 
 }
 
-void RinexObsReader::static_Obs(ObsData &obsData,ObsDataStaticSum* obsDataStaticSum) {
+void RinexObsReader::static_Obs(ObsData &obsData, ObsDataStaticSum* obsDataStaticSum) {
     ObsDataStatic obsDataStatic;
 
+    // 数据有效性检查
+    if (obsData.satTypeValueData.empty()) {
+        if (debug) {
+            cout << "static_Obs: 观测数据为空" << endl;
+        }
+        return;
+    }
 
-    ///代表第一个历元
-    obsDataStatic.epochCount=obsDataStaticSum->epochSum;
+    if (obsData.epoch == BEGINNING_OF_TIME) {
+        if (debug) {
+            cout << "static_Obs: 历元时间无效" << endl;
+        }
+        return;
+    }
 
-///对于obsdata进行遍历，获取所需信息
-    for (auto temp1:obsData.satTypeValueData) {
-        obsDataStatic.SatelliteCount+=1;
-        string system=temp1.first.system;
-        for (auto temp2:temp1.second)
-            {
-            if (obsDataStatic.obsTypeCount[system].count(temp2.first)) {
-                obsDataStatic.obsTypeCount[system][temp2.first]+=1;
+    ///代表当前历元序号
+    obsDataStatic.epochCount = obsDataStaticSum->epochSum;
+
+    ///对obsdata进行遍历，获取所需信息
+    for (const auto& temp1 : obsData.satTypeValueData) {
+        const SatID& satId = temp1.first;
+        const TypeValueMap& typeValueMap = temp1.second;
+
+        // 检查卫星ID是否有效
+        if (satId.system.empty()) {
+            if (debug) {
+                cout << "static_Obs: 卫星系统为空，跳过" << endl;
             }
-            else {
-                obsDataStatic.obsTypeCount[system][temp2.first]=1;
+            continue;
+        }
+
+        // 检查观测数据是否有效
+        if (typeValueMap.empty()) {
+            if (debug) {
+                cout << "static_Obs: 卫星 " << satId << " 无有效观测值，跳过" << endl;
+            }
+            continue;
+        }
+
+        obsDataStatic.SatelliteCount += 1;
+        string system = satId.system;
+
+        for (const auto& temp2 : typeValueMap) {
+            const string& obsType = temp2.first;
+            double obsValue = temp2.second;
+
+            // 检查观测值是否有效（非零检查）
+            if (std::abs(obsValue) < 1e-10) {
+                if (debug) {
+                    cout << "static_Obs: 观测值 " << obsType << " 无效(接近零)，跳过" << endl;
+                }
+                continue;
+            }
+
+            if (obsDataStatic.obsTypeCount[system].count(obsType)) {
+                obsDataStatic.obsTypeCount[system][obsType] += 1;
+            } else {
+                obsDataStatic.obsTypeCount[system][obsType] = 1;
             }
         }
+
+
+    // 只有当有有效数据时才插入
+    if (obsDataStatic.SatelliteCount > 0)
+        obsDataStaticSum->insert(obsDataStatic);
     }
-    obsDataStaticSum->insert(obsDataStatic);
+}
 
-
-
+// 统计指定系统中同时有两种观测码的卫星数量
+int RinexObsReader::countDualCodeSatellites(ObsData &obsData, const std::string& system, 
+                                            const std::string& code1, const std::string& code2) {
+    int count = 0;
+    
+    for (const auto& temp1 : obsData.satTypeValueData) {
+        const SatID& satId = temp1.first;
+        const TypeValueMap& typeValueMap = temp1.second;
+        
+        // 只统计指定系统的卫星
+        if (satId.system != system) {
+            continue;
+        }
+        
+        // 检查是否同时有两种观测码
+        bool hasCode1 = typeValueMap.find(code1) != typeValueMap.end();
+        bool hasCode2 = typeValueMap.find(code2) != typeValueMap.end();
+        
+        if (hasCode1 && hasCode2) {
+            count++;
+        }
+    }
+    
+    return count;
 }

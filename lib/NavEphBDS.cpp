@@ -95,7 +95,7 @@ double NavEphBDS::svClockDrift(const CommonTime &t) const {
 
 // Compute satellite relativity correction (sec) at the given time
 // throw Invalid Request if the required data has not been stored.
-double NavEphBDS::svRelativity(const CommonTime &t) const {
+long double NavEphBDS::svRelativity(const CommonTime &t) const {
     if (t.m_timeSystem!=TimeSystem::BDT)
         cerr << "Timesystem should be BDT!!!" << endl;
     BDSEllipsoid ell;
@@ -271,11 +271,33 @@ Xvt NavEphBDS::svXvt(const CommonTime &t) const {
     return sv;
 }
 
+Xvt NavEphBDS::svXvt(const CommonTime &t, const SatID& sat) const {
+    Xvt sv = svXvt(t);
+
+    // BDS-2 GEO 判断：系统为 C 且 PRN 1~5
+    if (sat.system == "C" && sat.id >= 1 && sat.id <= 5) {
+        const double GEO_ROT_ANGLE = -5.0 * DEG_TO_RAD;
+        double cos_ang = cos(GEO_ROT_ANGLE);
+        double sin_ang = sin(GEO_ROT_ANGLE);
+
+        // 旋转坐标
+        double y_rot = sv.x[1] * cos_ang - sv.x[2] * sin_ang;
+        double z_rot = sv.x[1] * sin_ang + sv.x[2] * cos_ang;
+        sv.x[1] = y_rot;
+        sv.x[2] = z_rot;
+
+        // 旋转速度
+        double vy_rot = sv.v[1] * cos_ang - sv.v[2] * sin_ang;
+        double vz_rot = sv.v[1] * sin_ang + sv.v[2] * cos_ang;
+        sv.v[1] = vy_rot;
+        sv.v[2] = vz_rot;
+    }
+
+    return sv;
+}
+
 bool NavEphBDS::isValid(const CommonTime &ct) const {
-    if (ct.m_timeSystem!=TimeSystem::BDT)
-        cerr << "Timesystem should be BDT!!!" << endl;
+    if (ct.m_timeSystem != TimeSystem::BDT) return false;
     if (ct < beginValid || ct > endValid) return false;
     return true;
 }
-
-

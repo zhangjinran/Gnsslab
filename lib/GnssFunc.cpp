@@ -16,6 +16,20 @@
  */
 
 
+// ============================================================================
+// 文件概述：GNSS数据处理核心函数库
+// 功能：包含RINEX文件解析、卫星位置计算、误差校正、周跳探测、差分处理等
+// 主要模块：
+// 1. RINEX文件读写解析 (parseRinexHeader, parseRinexObs, parseTime)
+// 2. 观测数据预处理 (chooseObs, convertObsType)
+// 3. 卫星位置计算 (computeSatPos, computeAtTransmitTime)
+// 4. 误差校正 (correctTGD, earthRotation, ionoDelay, tropDelay)
+// 5. 周跳探测 (detectCSMW)
+// 6. 差分处理 (differenceStation, differenceSat)
+// 7. 模糊度固定 (fixSolution, ambiguityDatum)
+// 8. 结果输出 (printSolution)
+// ============================================================================
+
 #include <string>
 #include <algorithm> //replace 函数
 #include "TimeConvert.h"
@@ -26,9 +40,21 @@
 #include "RinexNavStore.hpp"
 #include"CoordConvert.h"
 #include"CoordStruct.h"
-#define debug 1
-#define debugCSMW 1
+#define debug 0
+#define debugCSMW 0
 
+/**
+ * 函数：parseRinexHeader
+ * 功能：解析RINEX文件头信息
+ * 参数：
+ *   rinexFileStream - RINEX文件输入流
+ *   rinexHeader     - 输出：RINEX头信息结构体
+ * 说明：
+ *   1. 读取RINEX文件版本，仅支持3.04版本
+ *   2. 解析测站名、近似位置、观测类型等信息
+ *   3. 按系统(GPS/BDS)存储观测类型
+ *   4. 遇到"END OF HEADER"标签时停止解析
+ */
 void parseRinexHeader(std::fstream &rinexFileStream, RinexHeader &rinexHeader) {
 
     double version;
@@ -39,7 +65,8 @@ void parseRinexHeader(std::fstream &rinexFileStream, RinexHeader &rinexHeader) {
         string line;
         getline(rinexFileStream, line);
 
-        cout << "parseRinexHeader:" << line << endl;
+        if(debug)
+            cout << "parseRinexHeader:" << line << endl;
 
         string label;
         if (line.size() >= 80)
@@ -89,6 +116,21 @@ void parseRinexHeader(std::fstream &rinexFileStream, RinexHeader &rinexHeader) {
     }
 };
 
+/**
+ * 函数：parseRinexObs
+ * 功能：解析RINEX观测文件的一个历元观测数据
+ * 参数：
+ *   rinexFileStream - RINEX文件输入流
+ * 返回值：ObsData - 包含一个历元的观测数据
+ * 说明：
+ *   1. 首次调用时解析文件头（静态变量isHeaderRead控制）
+ *   2. 读取历元行，检查历元标记和历元标志
+ *   3. 解析时间、卫星数量
+ *   4. 读取每个卫星的观测值，按观测类型存储
+ *   5. 支持GPS("G")和北斗("C")系统，其他系统跳过
+ *   6. 载波相位观测值转换为距离（米）
+ *   7. 观测值异常（值为0）跳过
+ */
 ObsData parseRinexObs(std::fstream &rinexFileStream) {
     static bool isHeaderRead = false;
     static RinexHeader rinexHeader;
@@ -239,6 +281,18 @@ ObsData parseRinexObs(std::fstream &rinexFileStream) {
 }
 
 
+/**
+ * 函数：parseTime
+ * 功能：从RINEX历元行解析时间信息
+ * 参数：
+ *   line - RINEX历元行字符串
+ * 返回值：CommonTime - 通用时间格式
+ * 说明：
+ *   1. 检查时间格式空格位置，检测文件损坏
+ *   2. 解析年、月、日、时、分、秒
+ *   3. 处理秒值异常情况（≥60.0的情况）
+ *   4. 将历元时间转换为通用时间格式
+ */
 CommonTime parseTime(const string &line) {
 
     // check if the spaces are in the right place - an easy
@@ -283,6 +337,18 @@ CommonTime parseTime(const string &line) {
 
 }  // end parseTime
 
+/**
+ * 函数：chooseObs
+ * 功能：根据系统类型过滤观测数据
+ * 参数：
+ *   obsData  - 输入/输出：观测数据，过滤后的数据将替换原数据
+ *   sysTypes - 映射：系统类型 -> 允许的观测类型集合
+ * 说明：
+ *   1. 遍历所有卫星观测数据
+ *   2. 检查卫星系统是否在sysTypes中
+ *   3. 只保留允许的观测类型
+ *   4. 如果卫星没有剩余观测值，则从结果中删除
+ */
 void chooseObs(ObsData &obsData, std::map<std::string, std::set<std::string>> &sysTypes) {
     SatTypeValueMap filteredSatTypeValueData;
 
@@ -317,6 +383,16 @@ void chooseObs(ObsData &obsData, std::map<std::string, std::set<std::string>> &s
 
 // L1C => L1
 // L2W => L2
+/**
+ * 函数：convertObsType
+ * 功能：转换观测类型标识符（简化命名）
+ * 参数：
+ *   obsData - 输入/输出：观测数据
+ * 说明：
+ *   1. 将观测类型标识符从3字符简化为2字符
+ *   2. 例如：L1C => L1, L2W => L2
+ *   3. 用于统一不同接收机的观测类型命名
+ */
 void convertObsType(ObsData &obsData) {
     SatTypeValueMap stvData;
     for (auto sd: obsData.satTypeValueData) {
@@ -331,6 +407,71 @@ void convertObsType(ObsData &obsData) {
     obsData.satTypeValueData = stvData;
 };
 
+/**
+ * 函数：writefileSatPos
+ * 功能：将卫星位置信息写入文件（用于调试和可视化）
+ * 参数：
+ *   satXvtTransTime    - 卫星在发射时刻的位置速度时间信息
+ *   satXvtTransTimeIF  - 无电离层组合处理后的卫星位置速度时间信息
+ *   epoch              - 当前历元时间
+ * 说明：
+ *   1. 将数据写入固定路径的文件
+ *   2. 输出原始数据、IF组合数据及其差值
+ *   3. 主要用于调试和数据分析
+ */
+void writefileSatPos(std::map<SatID, Xvt> satXvtTransTime, std::map<SatID, Xvt> satXvtTransTimeIF, CivilTime epoch, const std::string& outputPath) {
+    ofstream fout(outputPath, std::ios::out);
+    if (!fout) {
+        cerr << "Unable to open file for writing: " << outputPath << endl;
+        return;
+    }
+    fout << std::fixed << std::setprecision(15);
+    fout<<"epoch:"<<epoch<<endl;
+    for (auto it:satXvtTransTime) {
+        auto decide=satXvtTransTimeIF.find(it.first);
+        if (decide==satXvtTransTimeIF.end()) {
+            continue;
+        }
+        SatID satID=it.first;
+        Xvt satXvt=it.second;
+        Xvt satXvtIF=satXvtTransTimeIF[satID];
+        Xvt diff;
+        diff.x=satXvt.x-satXvtIF.x;
+        diff.v=satXvt.v-satXvtIF.v;
+        diff.clkbias=satXvt.clkbias-satXvtIF.clkbias;
+        diff.clkdrift=satXvt.clkdrift-satXvtIF.clkdrift;
+        diff.relcorr=satXvt.relcorr-satXvtIF.relcorr;
+        fout << std::fixed << std::setprecision(15);
+
+        // 输出一行数据，字段间用空格分隔
+        fout <<satID<< ' '
+             <<it.second<<std::endl;
+        fout<<satID<<' '
+            <<satXvtTransTimeIF[satID]<<std::endl;
+        fout<<satID<<' '
+            <<diff<<std::endl;
+
+    }
+
+};
+
+
+/**
+ * 函数：computeSatPos
+ * 功能：计算所有卫星在发射时刻的位置
+ * 参数：
+ *   obsData  - 观测数据（输入/输出，删除无法计算位置的卫星）
+ *   navStore - 导航星历存储对象
+ *   IF       - 无电离层组合标志：0=单频，1=双频无电离层组合
+ * 返回值：std::map<SatID, Xvt> - 卫星在发射时刻的位置速度时间信息
+ * 说明：
+ *   1. 遍历观测数据中的所有卫星
+ *   2. 根据IF标志选择观测值：
+ *      - IF=0：自动查找伪距观测值（支持GPS、BDS、Galileo、GLONASS、QZSS、IRNSS）
+ *      - IF=1：使用双频无电离层组合（当前仅支持GPS和BDS）
+ *   3. 调用computeAtTransmitTime计算发射时刻卫星位置
+ *   4. 删除无法计算位置的卫星（观测值缺失、星历无效等）
+ */
 std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int IF=0) {
     std::map<SatID, Xvt> satXvtData;
     SatIDSet satRejectedSet;
@@ -344,34 +485,28 @@ std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int
             // Scalar to hold temporal value
             double obs(0.0);
             string codeType;
-            if (!IF)
-                {
-                if (sat.system == "G")
-                    {
-                    codeType = "C1";
+            if (!IF) {
+                // 单频模式：从观测数据中查找伪距观测值
+                bool found = false;
+                for (const auto& entry : stv.second) {
+                    const std::string& type = entry.first;
+                    // 查找伪距观测值（以C或P开头）
+                    if (type.size() >= 2 && (type[0] == 'C' || type[0] == 'P')) {
+                        codeType = type;
+                        obs = entry.second;
+                        found = true;
+                        break;
                     }
-                else if (sat.system == "C")
-                    {
-                    codeType = "C2";
-                    }
-                // todo
-                // 请增加bds或其他系统的观测值选择
-                else
-                    {
+                }
+                
+                if (!found) {
                     satRejectedSet.insert(sat);
                     continue;
-                    }
-                try
-                    {
-                    obs = stv.second.at(codeType);
-                    if(debug)
-                        cout << "sat:" << sat << " obs:" << codeType << " value:" << obs << endl;
-                    }
-                catch (...)
-                    {
-                    satRejectedSet.insert(sat);
-                    continue;
-                    }
+                }
+                
+                if (debug) {
+                    cout << "sat:" << sat << " obs:" << codeType << " value:" << obs << endl;
+                }
             }
             else {
                 string name_basic_string[]={"C1","C2","C5","C6","C7"};
@@ -423,7 +558,6 @@ std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int
                 continue;
             }
             satXvtData[sat] = xvt;
-
     }
 
     // remove bad sat;
@@ -437,6 +571,24 @@ std::map<SatID, Xvt> computeSatPos(ObsData &obsData, RinexNavStore& navStore,int
 
 
 
+/**
+ * 函数：computeAtTransmitTime
+ * 功能：迭代计算卫星在信号发射时刻的位置（考虑卫星钟差和相对论效应）
+ * 参数：
+ *   tr       - 接收机接收时间
+ *   pr       - 伪距观测值（米）
+ *   sat      - 卫星ID
+ *   navStore - 导航星历存储对象
+ *   IF       - 无电离层组合标志
+ * 返回值：Xvt - 卫星在发射时刻的位置、速度、钟差、钟漂、相对论改正
+ * 说明：
+ *   1. 初始发射时间 = 接收时间 - 光行时（pr/C_MPS）
+ *   2. 迭代计算（2次迭代）：
+ *      a. 获取卫星位置和钟差
+ *      b. 应用TGD（群延迟）改正
+ *      c. 修正发射时间：减去钟差和相对论效应
+ *   3. 最终得到精确的发射时刻卫星状态
+ */
 Xvt computeAtTransmitTime(const CommonTime &tr,
                           const double &pr,
                           const SatID &sat,
@@ -456,44 +608,76 @@ noexcept(false) {
     // 这里也可以用while循环来替换这里的迭代次数
     for (int i = 0; i < 2; i++) {
         xvt = navStore.getXvt(sat, tt);
+        if (debug) {
+            cout << "computeAtTransmitTime::xvt:" << endl;
+            cout << xvt << endl;
+            cout << "computeAtTransmitTime::tt:" << tt << endl;
+        }
         //cout << xvt << endl;
         tt = transmit;
         //cout<<"tt:"<<tt<<endl;
-        correctTGD(xvt,sat,tt,IF,navStore);
+        //correctTGD(xvt,sat,tt,IF,navStore);
         tt -= (xvt.clkbias + xvt.relcorr);
 
     }
     return xvt;
 };
 
-double codeSelectFrequency(string  code) {
-    if (code == "C1")
-        return L1_FREQ_BDS;
-    else if (code == "C2")
-        return L2_FREQ_BDS;
-    else if (code == "C5")
-        return L5_FREQ_BDS;
-    else if (code == "C6")
-        return L6_FREQ_BDS;
-    else if (code == "C7")
-        return L7_FREQ_BDS;
-    else {
-        cout<<"No selective frequency for this code!!!"<<endl;
-        exit(-1);
-
-
+/**
+ * 函数：codeSelectFrequency
+ * 功能：根据观测码类型返回对应的频率值
+ * 参数：
+ *   code - 观测码类型（C1, C2, C5, C6, C7）
+ * 返回值：double - 对应的频率值（Hz）
+ * 说明：
+ *   1. 用于无电离层组合计算中的频率权重
+ *   2. 目前使用BDS频率定义，需根据实际系统扩展
+ */
+double codeSelectFrequency(const string& code) {
+    static const std::map<std::string, double> freqMap = {
+        {"C1", L1_FREQ_BDS},
+        {"C2", L2_FREQ_BDS},
+        {"C5", L5_FREQ_BDS},
+        {"C6", L6_FREQ_BDS},
+        {"C7", L7_FREQ_BDS}
+    };
+    
+    auto it = freqMap.find(code);
+    if (it != freqMap.end()) {
+        return it->second;
     }
-
+    
+    if (debug) {
+        cout << "No selective frequency for this code: " << code << endl;
+    }
+    throw InvalidRequest("Unknown code type in codeSelectFrequency: " + code);
 }
 
+/**
+ * 函数：correctTGD
+ * 功能：校正卫星钟群延迟（TGD）误差
+ * 参数：
+ *   xvt      - 输入/输出：卫星位置速度时间信息，将修正钟差
+ *   sat      - 卫星ID
+ *   epoch    - 当前历元时间
+ *   IF       - 无电离层组合标志
+ *   navStore - 导航星历存储对象
+ * 说明：
+ *   1. IF模式不支持TGD校正（应使用无电离层组合消除一阶电离层和TGD）
+ *   2. GPS系统：直接使用TGD值
+ *   3. BDS系统：使用TGD1和TGD2计算L1/L2频率的等效TGD
+ *   4. 其他系统暂不支持
+ */
 void correctTGD(Xvt& xvt, SatID sat, CommonTime epoch,int IF,RinexNavStore& navStore) {
     if (IF) {
-        cout<<"correctTGD function don't support processing IF_group!!!"<<endl;
+        if(debug)
+            cout<<"correctTGD function don't support processing IF_group!!!"<<endl;
     }
     else {
         if (sat.system == "G") {
             NavEphGPS nav_eph_gps=navStore.findGPSEph(sat,epoch);
             xvt.clkbias-=nav_eph_gps.TGD;
+            xvt.typeTGDData["C1"]=nav_eph_gps.TGD;
         }
         else if (sat.system == "C") {
             convertTimeSystem(epoch,TimeSystem::BDT);
@@ -506,14 +690,30 @@ void correctTGD(Xvt& xvt, SatID sat, CommonTime epoch,int IF,RinexNavStore& navS
 
             double L1_2=pow(L1_FREQ_BDS,2);
             double L2_2=pow(L2_FREQ_BDS,2);
-            xvt.clkbias+=L1_2*(TGD1-TGD2)/(L1_2-L2_2);
+            double TGD=-L1_2*(TGD1-TGD2)/(L1_2-L2_2);
+            xvt.clkbias-=TGD;
+            xvt.typeTGDData["C2"]=TGD;
         }
         else {
-            cout<<"correctTGD function don't support processing other system except GPS and BDT!!!"<<endl;
+            if(debug)
+                cout<<"correctTGD function don't support processing other system except GPS and BDT!!!"<<endl;
         }
     }
 }
 
+/**
+ * 函数：earthRotation
+ * 功能：地球自转改正（将卫星位置从发射时刻旋转到接收时刻）
+ * 参数：
+ *   xyz              - 接收机位置（ECEF坐标系）
+ *   satXvtTransTime  - 卫星在发射时刻的位置速度时间信息
+ * 返回值：std::map<SatID, Xvt> - 旋转到接收时刻的卫星位置速度信息
+ * 说明：
+ *   1. 计算信号传播时间：卫星到接收机的距离 / 光速
+ *   2. 计算地球自转角度：ω_earth * 传播时间
+ *   3. 对卫星位置和速度进行Z轴旋转
+ *   4. 保持Z坐标不变，仅旋转X-Y平面
+ */
 std::map<SatID, Xvt> earthRotation(Eigen::Vector3d &xyz,
                                    std::map<SatID, Xvt> &satXvtTransTime) {
 
@@ -569,6 +769,19 @@ std::map<SatID, Xvt> earthRotation(Eigen::Vector3d &xyz,
     return satXvtRecTime;
 };
 
+/**
+ * 函数：computeElevAzim
+ * 功能：计算卫星相对于接收机的仰角和方位角
+ * 参数：
+ *   xyz           - 接收机位置（ECEF坐标系）
+ *   satXvt        - 卫星位置速度信息
+ *   tempElevData  - 输出：卫星仰角映射
+ *   tempAzimData  - 输出：卫星方位角映射
+ * 说明：
+ *   1. 遍历所有卫星
+ *   2. 调用elevation和azimuth函数计算仰角和方位角
+ *   3. 结果存储在映射中供后续使用
+ */
 void computeElevAzim(Eigen::Vector3d& xyz,
                      std::map<SatID,Xvt> & satXvt,
                      SatValueMap& tempElevData,
@@ -592,122 +805,155 @@ void computeElevAzim(Eigen::Vector3d& xyz,
         tempAzimData[sat] = azim;
     }
 };
+/**
+ * 函数：ionoDelay
+ * 功能：计算所有卫星的电离层延迟
+ * 参数：
+ *   xyz           - 接收机位置（ECEF坐标系）
+ *   epoch         - 当前历元时间
+ *   satElevData   - 卫星仰角映射
+ *   satAzimData   - 卫星方位角映射
+ *   navStore      - 导航星历存储对象（包含电离层参数）
+ *   sysTypes      - 可选参数，系统到观测类型的映射，用于确定实际使用的频率
+ * 返回值：std::map<SatID, double> - 卫星电离层延迟映射（秒）
+ * 说明：
+ *   1. 遍历所有卫星
+ *   2. 从导航星历获取Klobuchar模型参数（alpha, beta）
+ *   3. 使用createWeekSecond创建对应系统的周秒对象
+ *   4. 如果提供sysTypes，从其中提取观测类型（如C1、C2），并转换为频率编号获取频率
+ *   5. 如果未提供sysTypes或获取频率失败，使用默认的L1频率
+ *   6. 调用klobucharIonosphericCorrection计算延迟
+ *   7. 支持GPS、BDS、Galileo、GLONASS、QZSS、IRNSS系统
+ */
 std::map<SatID, double> ionoDelay(Vector3d& xyz,
                                   CommonTime& epoch,
                                   std::map<SatID, double>& satElevData,
                                   std::map<SatID, double>& satAzimData,
-                                  RinexNavStore& navStore)
+                                  RinexNavStore& navStore,
+                                  std::map<std::string, std::set<std::string>>* sysTypes)
 {
-    std::map<SatID, double> ionoDelay;
-    double ionodelay(0.0);
+    std::map<SatID, double> ionoDelayMap;
 
-    for (auto& it : satElevData)
-    {
-        auto temp = navStore.ionoCorrData.begin();
+    // 卫星系统到时间系统的映射
+    static const std::map<std::string, TimeSystem::SystemType> sysMap = {
+        {"G", TimeSystem::GPS},
+        {"C", TimeSystem::BDT},
+        {"E", TimeSystem::GAL},
+        {"R", TimeSystem::GLO},
+        {"J", TimeSystem::QZS},
+        {"I", TimeSystem::IRN}
+    };
 
-        double alpha[4] = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
-        temp++;
-        double beta[4]  = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
-
-        if (it.first.system == "G")
-        {
-            GPSWeekSecond gps_week_second;
-            CommonTime2WeekSecond(epoch, gps_week_second);
-            ionodelay = klobucharIonosphericCorrection(xyz,
-                                                      satElevData[it.first],
-                                                      satAzimData[it.first],
-                                                      alpha,
-                                                      beta,
-                                                      gps_week_second.getSOW(),
-                                                      it.first,
-                                                      L1_FREQ_GPS);
-        }
-        else if (it.first.system == "C")
-        {
-            BDTWeekSecond bdt_week_second;
-            CommonTime epoch_temp = epoch;
-            convertTimeSystem(epoch_temp, TimeSystem::BDT);
-            CommonTime2WeekSecond(epoch_temp, bdt_week_second);
-            ionodelay = klobucharIonosphericCorrection(xyz,
-                                                      satElevData[it.first],
-                                                      satAzimData[it.first],
-                                                      alpha,
-                                                      beta,
-                                                      bdt_week_second.getSOW(),
-                                                      it.first,
-                                                      L2_FREQ_BDS);
-        }
-        else
-        {
-            cout << "Unknown system " << it.first.system << endl;
+    for (auto& it : satElevData) {
+        SatID sat = it.first;
+        std::string sys = sat.system;
+        
+        // 获取时间系统
+        auto sysIter = sysMap.find(sys);
+        if (sysIter == sysMap.end()) {
+            if(debug) cout << "Unknown system " << sys << endl;
             continue;
         }
-
-        ionoDelay[it.first] = ionodelay;
+        TimeSystem::SystemType tsType = sysIter->second;
+        
+        // 获取频率
+        double freq = 0.0;
+        if (sysTypes != nullptr) {
+            auto typesIter = sysTypes->find(sys);
+            if (typesIter != sysTypes->end()) {
+                for (const std::string& type : typesIter->second) {
+                    if (type.size() >= 2 && (type[0] == 'C' || type[0] == 'P')) {
+                        int freqNum = std::stoi(type.substr(1));
+                        freq = getFreq(sys, freqNum);
+                        if (freq > 0) break;
+                    }
+                }
+            }
+        }
+        if (freq <= 0) freq = getFreq(sys, 1);
+        if (freq <= 0) {
+            if(debug) cout << "Failed to get frequency for system " << sys << endl;
+            continue;
+        }
+        
+        // 创建周秒对象并转换时间
+        std::unique_ptr<WeekSecond> ws(createWeekSecond(tsType));
+        CommonTime epoch_converted = convertTimeSystem(epoch, TimeSystem(tsType));
+        CommonTime2WeekSecond(epoch_converted, *ws);
+        
+        // 根据系统选择电离层模型和参数
+        double ionodelay = 0.0;
+        
+        if (sys == "C") {
+            // BDS: 使用Klobuchar模型，按SatID选择参数
+            double alpha[4] = {0}, beta[4] = {0};
+            auto itBDS = navStore.ionoCorrDataBDS.find(sat);
+            
+            // 如果当前卫星找不到参数，使用C02作为默认
+            if (itBDS == navStore.ionoCorrDataBDS.end()) {
+                SatID defaultSat("C02");
+                itBDS = navStore.ionoCorrDataBDS.find(defaultSat);
+            }
+            
+            if (itBDS != navStore.ionoCorrDataBDS.end()) {
+                const auto& param = itBDS->second;
+                if (param.hasAlpha) std::copy(param.alpha, param.alpha + 4, alpha);
+                if (param.hasBeta) std::copy(param.beta, param.beta + 4, beta);
+            }
+            ionodelay = klobucharIonosphericCorrection(xyz, satElevData[sat], satAzimData[sat], alpha, beta, ws->getSOW(), sat, freq);
+            
+        } else if (sys == "E") {
+            // Galileo: 使用NeQuick-G模型（3参数）
+            double ai[3] = {0};
+            auto galIter = navStore.ionoCorrData.find("GAL");
+            if (galIter != navStore.ionoCorrData.end() && galIter->second.size() >= 3) {
+                ai[0] = galIter->second[0];
+                ai[1] = galIter->second[1];
+                ai[2] = galIter->second[2];
+            }
+            // Galileo模型直接返回米，不需要乘以光速
+            ionoDelayMap[sat] = GalileoIonosphericCorrection(xyz, satElevData[sat], satAzimData[sat], ai, freq);
+            continue;  // 跳过后面的乘以光速操作
+            
+        } else {
+            // GPS/QZSS/IRNSS/GLONASS: 使用Klobuchar模型，直接取第一个参数
+            auto temp = navStore.ionoCorrData.begin();
+            double alpha[4] = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
+            temp++;
+            double beta[4]  = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
+            ionodelay = klobucharIonosphericCorrection(xyz, satElevData[sat], satAzimData[sat], alpha, beta, ws->getSOW(), sat, freq);
+        }
+        
+        ionoDelayMap[sat] = ionodelay * C_MPS;
     }
 
-    return ionoDelay;
+    return ionoDelayMap;
 }
 
-// double ionoCorrection4Params(Vector3d geoUser,
-//                              double elev,
-//                              double azim,
-//                              std::vector<double>& ionoParams,  // 只有4个！
-//                              double tow,
-//                              std::string satSystem,
-//                              double freq)
-// {
-//     // 必须 4 个参数
-//     if (ionoParams.size() < 4) {
-//         return 0.0;
-//     }
-//
-//     double a0 = ionoParams[0];
-//     double a1 = ionoParams[1];
-//     double a2 = ionoParams[2];
-//     double a3 = ionoParams[3];
-//
-//     // 角度转弧度（和你原来完全一样）
-//     double latUser = geoUser(0) * PI / 180.0;
-//     double lonUser = geoUser(1) * PI / 180.0;
-//     double E = elev * PI / 180.0;
-//
-//     // 倾斜映射函数
-//     double map = 1.0 / (sin(E) + 0.123);
-//
-//     // 简化地磁纬度（单参数模型标准算法）
-//     double phi = geoUser(0) + 12.5 * sin((geoUser(1) - 45.0) * PI / 180.0);
-//     double phi_r = phi * PI / 180.0;
-//
-//     // 本地时间（小时）
-//     double t = fmod(tow / 3600.0 + geoUser(1) / 15.0 + 24.0, 24.0);
-//
-//     // 电离层振幅
-//     double amp = a0 + a1 * phi_r + a2 * phi_r*phi_r + a3 * phi_r*phi_r*phi_r;
-//     if (amp < 0) amp = 0.0;
-//
-//     // 相位
-//     double x = 2.0 * PI * (t - 14.0) / 72000.0;
-//
-//     // 垂直延迟（秒）
-//     double iono_vert;
-//     if (fabs(x) < PI/2.0) {
-//         iono_vert = (5e-9 + amp * cos(x));
-//     } else {
-//         iono_vert = 5e-9;
-//     }
-//
-//     // 斜延迟（秒）
-//     double ionoTime = iono_vert * map;
-//
-//     // 频率改正（和你原来公式一样）
-//     double f1 = (satSystem == "G") ? 1575.42e6 : 1561.098e6;
-//     ionoTime *= (f1 * f1) / (freq * freq);
-//
-//     return ionoTime; // 单位：秒
-// }
 
 
+/**
+ * 函数：klobucharIonosphericCorrection
+ * 功能：Klobuchar电离层模型校正计算
+ * 参数：
+ *   xyz    - 接收机位置（ECEF坐标系）
+ *   elev   - 卫星仰角（度）
+ *   azim   - 卫星方位角（度）
+ *   alpha  - Klobuchar模型alpha参数数组[4]
+ *   beta   - Klobuchar模型beta参数数组[4]
+ *   tow    - 时间周内秒（GPS或BDS）
+ *   sat    - 卫星ID（用于确定系统）
+ *   freq   - 观测频率（Hz）
+ * 返回值：double - 电离层延迟（秒）
+ * 说明：
+ *   1. 将接收机坐标转换为大地坐标
+ *   2. 计算电离层穿刺点（IPP）位置
+ *   3. 计算地磁纬度
+ *   4. 计算当地时间
+ *   5. 使用Klobuchar模型计算垂直延迟
+ *   6. 应用倾斜因子和频率缩放
+ *   7. 包含详细的调试输出（当debug=1且卫星为G10时）
+ */
 double klobucharIonosphericCorrection(Vector3d xyz,
                                       double elev,
                                       double azim,
@@ -717,40 +963,25 @@ double klobucharIonosphericCorrection(Vector3d xyz,
                                       SatID sat,
                                       double freq)
 {
-    // 坐标转换
     XYZ coord = xyz;
     BLH blh;
+    double RE;
+    double h_ion;
 
-    if (sat.system == "G") {
-        GPSEllipsoid ell;
-        blh = xyz2blh(coord, ell);
-    }
-    else if (sat.system == "C") {
-        BDSEllipsoid ell;
-        blh = xyz2blh(coord, ell);
-    }
-    else {
-        cout << "The klobuchar don't support the Unknown system " << sat.system << endl;
-        exit(-1);
-    }
+    std::string sys = sat.system;
+
+    // 使用工厂函数创建参考框架
+    auto frame = ReferenceFrameFactory::create(sys);
+    blh = xyz2blh(coord, *frame);
+    RE = frame->getA();
+
+    // 电离层高度（BDS使用375km，其他系统使用350km）
+    h_ion = (sys == "C") ? 375000.0 : 350000.0;
 
     double latUser = blh(0);
     double lonUser = blh(1);
     double E = elev * PI / 180.0;
     double A = azim * PI / 180.0;
-
-    double h_ion = (sat.system == "G") ? 350000.0 : 375000.0;
-
-    // 地球半径
-    double RE;
-    if (sat.system == "G") {
-        GPSEllipsoid ell;
-        RE = ell.getA();
-    }
-    else {
-        BDSEllipsoid ell;
-        RE = ell.getA();
-    }
 
     // 地心角 ψ
     double psi = PI / 2.0 - E - asin((RE * cos(E)) / (RE + h_ion));
@@ -762,10 +993,8 @@ double klobucharIonosphericCorrection(Vector3d xyz,
     double lonIPP = lonUser + (sin(psi) * sin(A)) / cos(latIPP);
 
     // 地磁纬度
-    const double PHI_P_DEG    = 78.3;
-    const double LAMBDA_P_DEG = 291.0;
-    double phiP = PHI_P_DEG * PI / 180.0;
-    double lamP = LAMBDA_P_DEG * PI / 180.0;
+    const double phiP = 79.5 * PI/180.0;   // slightly north shift
+    const double lamP = 288.0 * PI/180.0;  // slight west shift
     double latMag = asin(sin(latIPP) * sin(phiP) + cos(latIPP) * cos(phiP) * cos(lonIPP - lamP));
     double latMagDeg = latMag * 180.0 / PI;
 
@@ -798,7 +1027,12 @@ double klobucharIonosphericCorrection(Vector3d xyz,
     }
 
     // 频率缩放
-    double f1 = L1_FREQ_GPS;
+    double f1;
+    if (sys=="C")
+        f1=L2_FREQ_BDS;
+    else
+        f1 = getFreq(sys, 1);
+
     double ionoDelay = I1 * (f1 * f1) / (freq * freq);
 
     // 调试输出（仅G10）
@@ -824,124 +1058,305 @@ double klobucharIonosphericCorrection(Vector3d xyz,
     return ionoDelay;
 }
 
+/**
+ * 函数：GalileoIonosphericCorrection
+ * 功能：Galileo NeQuick-G 电离层模型校正计算
+ * 参数：
+ *   xyz    - 接收机位置（ECEF坐标系）
+ *   elev   - 卫星仰角（度）
+ *   azim   - 卫星方位角（度）
+ *   ai     - NeQuick-G模型参数数组[3]
+ *   tow    - 时间周内秒
+ *   sat    - 卫星ID
+ *   freq   - 观测频率（Hz）
+ * 返回值：
+ *   电离层延迟（秒）
+ */
+double GalileoIonosphericCorrection(
+    const Vector3d& xyz,
+    double elev,
+    double azim,
+    double ai[3],
+    double freq)
+{
+    XYZ coord = xyz;
+    auto frame = ReferenceFrameFactory::create("E");
+
+    BLH blh = xyz2blh(coord, *frame);
+
+    const double RE   = frame->getA();
+    const double HION = 450000.0;      // 450 km
+
+    //--------------------------------------------------
+    // User position
+    //--------------------------------------------------
+    double latUser = blh(0);           // rad
+    double lonUser = blh(1);           // rad
+
+    double E = elev * PI / 180.0;
+    double A = azim * PI / 180.0;
+
+    //--------------------------------------------------
+    // IPP
+    //--------------------------------------------------
+    double psi =
+        PI/2.0
+      - E
+      - asin(RE/(RE+HION)*cos(E));
+
+    double latIPP =
+        asin(
+            sin(latUser)*cos(psi)
+          + cos(latUser)*sin(psi)*cos(A)
+        );
+
+    double lonIPP =
+        lonUser
+      + sin(psi)*sin(A)/cos(latIPP);
+
+    //--------------------------------------------------
+    // Geomagnetic latitude
+    //--------------------------------------------------
+    const double PHI_P    = 78.3  * PI/180.0;
+    const double LAMBDA_P = 291.0 * PI/180.0;
+
+    double latMag =
+        asin(
+            sin(latIPP)*sin(PHI_P)
+          + cos(latIPP)*cos(PHI_P)
+          * cos(lonIPP - LAMBDA_P)
+        );
+
+    //--------------------------------------------------
+    // Simplified Galileo Az
+    //--------------------------------------------------
+    double latMagDeg = latMag * 180.0 / PI;
+
+    double Az =
+          ai[0]
+        + ai[1] * latMagDeg
+        + ai[2] * latMagDeg * latMagDeg;
+
+    if (Az < 0.0)
+        Az = 0.0;
+
+    //--------------------------------------------------
+    // Simplified VTEC model
+    //
+    // Typical:
+    // Az=50  -> 35 TECU
+    // Az=100 -> 70 TECU
+    // Az=150 ->105 TECU
+    // Az=200 ->140 TECU
+    //--------------------------------------------------
+    double VTEC = std::max(5.0, 0.35* Az);
+
+    //--------------------------------------------------
+    // Mapping Function
+    //--------------------------------------------------
+    double MF =
+        1.0 /
+        sqrt(
+            1.0 -
+            pow(RE/(RE+HION)*cos(E), 2)
+        );
+
+    //--------------------------------------------------
+    // Slant TEC
+    //--------------------------------------------------
+    double STEC = VTEC * MF;
+
+    //--------------------------------------------------
+    // Ionospheric delay
+    //
+    // 1 TECU =
+    // 1e16 electrons/m²
+    //--------------------------------------------------
+    double ionoDelay =
+        40.3e16 * STEC /
+        (freq * freq);
+
+    return ionoDelay;
+}
+/**
+ * 函数：tropDelay
+ * 功能：计算所有卫星的对流层延迟
+ * 参数：
+ *   xyz         - 接收机位置（ECEF坐标系）
+ *   satElevData - 卫星仰角映射
+ *   RH          - 相对湿度（百分比）
+ * 返回值：std::map<SatID,double> - 卫星对流层延迟映射（米）
+ * 说明：
+ *   1. 遍历所有卫星
+ *   2. 根据卫星系统选择对应的大地基准
+ *   3. 调用saastamoinenTroposphericCorrection计算延迟
+ *   4. 支持GPS、BDS、Galileo、GLONASS、QZSS、IRNSS系统
+ */
 std::map<SatID,double> tropDelay(Vector3d& xyz, std::map<SatID, double>&
 satElevData,double RH)
 {
     std::map<SatID,double> tropDelaymap;
-    double tropDelay(0.0);
-    for (auto it:satElevData) {
-        if (it.first.system=="G") {
-            GPSEllipsoid ell;
-             BLH blh=xyz2blh(xyz,ell);
 
-            tropDelay=saastamoinenTroposphericCorrection(blh,it.second,it.first,RH);
+    for (auto it : satElevData) {
 
-        }
-        else if (it.first.system=="C") {
-            BDSEllipsoid ell;
-            BLH blh=xyz2blh(xyz,ell);
-            tropDelay=saastamoinenTroposphericCorrection(blh,it.second,it.first,RH);
-        }
-        else {
-            cout<<"The tropDelay function don't support this system!!!!"<<endl;
+        if (it.second < 15.0 ) {
             continue;
         }
-        tropDelaymap.insert(std::pair<SatID,double>(it.first,tropDelay));
 
+        std::string sys = it.first.system;
+        BLH blh;
+
+        if (sys == "G") {
+            GPSEllipsoid ell;
+            blh = xyz2blh(xyz, ell);
+        }
+        else if (sys == "C") {
+            BDSEllipsoid ell;
+            blh = xyz2blh(xyz, ell);
+        }
+        else if (sys == "E") {
+            GPSEllipsoid ell;  // Galileo使用WGS-84
+            blh = xyz2blh(xyz, ell);
+        }
+        else if (sys == "R") {
+            PZ90 ell;  // GLONASS使用PZ-90
+            blh = xyz2blh(xyz, ell);
+        }
+        else if (sys == "J") {
+            GPSEllipsoid ell;  // QZSS使用WGS-84
+            blh = xyz2blh(xyz, ell);
+        }
+        else if (sys == "I") {
+            WGS84 ell;  // IRNSS使用WGS-84
+            blh = xyz2blh(xyz, ell);
+        }
+        else {
+            if(debug)
+                cout << "The tropDelay function don't support system " << sys << endl;
+            continue;
+        }
+
+        double tropDelay = saastamoinenTroposphericCorrection(blh, it.second, it.first, RH);
+        tropDelaymap[it.first] = tropDelay;
     }
     return tropDelaymap;
 }
 
 
-double saastamoinenTroposphericCorrection(Vector3d geoUser, double elev ,SatID sat_id, double RH)
+/**
+ * 函数：saastamoinenTroposphericCorrection
+ * 功能：Saastamoinen对流层模型校正计算
+ * 参数：
+ *   geoUser - 接收机大地坐标（纬度、经度、高程，度/米）
+ *   elev    - 卫星仰角（度）
+ *   sat_id  - 卫星ID（仅用于调试输出）
+ *   RH      - 相对湿度（百分比）
+ * 返回值：double - 对流层延迟（米）
+ * 说明：
+ *   1. 基于标准大气模型计算气压、温度、水汽压
+ *   2. 计算天顶干延迟（ZHD）和天顶湿延迟（ZWD）
+ *   3. 使用简单的映射函数（1/sin(elev)）
+ *   4. 包含详细的调试输出（当debug=1且卫星为G10时）
+ */
+double saastamoinenTroposphericCorrection(
+    const Vector3d& geoUser,
+    double elev_deg,
+    const SatID& sat_id,
+    double RH_in)
 {
+    // ==============================
+    // 1. 基本参数
+    // ==============================
+    double B   = geoUser(0);   // 纬度 (rad)
+    double H_m = geoUser(2);   // 高程 (m)
 
+    if (elev_deg < 5.0)   // cutoff（GNSS标准做法）
+        return NAN;
 
-    // 1. 提取测站参数
-    double B = geoUser(0);    // 纬度 deg
-    double H_m   = geoUser(2);   // 高程 m
-    double E_deg = elev;         // 高度角 deg
+    double E = elev_deg * PI / 180.0;
 
-    // 转弧度
+    // ==============================
+    // 2. RH 统一到 0~1
+    // ==============================
+    double RH = RH_in;
+    if (RH > 1.0) RH *= 0.01;   // 兼容输入 0~100
 
-    double E = E_deg * PI / 180.0;
+    RH = std::clamp(RH, 0.0, 1.0);
+
+    // ==============================
+    // 3. 标准大气模型
+    // ==============================
     double H_km = H_m / 1000.0;
 
-    // --------------------------
-    // 标准大气模型（你给的公式）
-    // --------------------------
-    // 气压 P (hPa/mbar)
     double P = 1013.25 * pow(1.0 - 0.0000226 * H_m, 5.225);
-
-    // 温度 T (摄氏度)
     double T_c = 15.0 - 0.0065 * H_m;
-
-    // 开尔文温度
     double T_k = T_c + 273.15;
 
-    // 饱和水汽压 es
-    double es = 6.108 * exp((17.15 * T_k - 4684.0) / (T_k - 38.45));
+    // 水汽压（Tetens）
+    double es = 6.1078 * exp(17.27 * T_c / (T_c + 237.3));
+    double e  = RH * es;
 
-    // 实际水汽压 e
-    double e = RH * es;
-
-    // --------------------------
-    // 天顶干延迟 ZHD (米)
-    // --------------------------
-    double fBH = 1.0 - 0.00266 * cos(2 * B) - 0.00028 * H_km;
+    // ==============================
+    // 4. Saastamoinen ZHD / ZWD
+    // ==============================
+    double fBH = 1.0 - 0.00266 * cos(2.0 * B) - 0.00028 * H_km;
     double ZHD = 2.277e-3 * P / fBH;
 
-    // --------------------------
-    // 天顶湿延迟 ZWD (米)
-    // --------------------------
     double ZWD = 0.002277 * (1255.0 / T_k + 0.05) * e;
 
-    // --------------------------
-    // 天顶总延迟
-    // --------------------------
-    double ZTD = ZHD + ZWD;
+    // ==============================
+    // 5. 改进 mapping function（稳定版）
+    // ==============================
+    double sinE = sin(E);
+    double tanE = tan(E);
 
-    // --------------------------
-    // 映射函数（简化模型）
-    // --------------------------
-    double mf = 1.0 / sin(E);
+    // 防止极低仰角数值爆炸
+    sinE = std::max(sinE, 0.05);
 
-    // 高度角过低保护
-    if (E < 5.0 * PI / 180.0) mf = 10.0;
+    double mf_d = 1.0 / (sinE + 0.00143 / (tanE + 0.0445));
+    double mf_w = 1.0 / (sinE + 0.00035 / (tanE + 0.017));
 
-    // --------------------------
-    // 倾斜对流层延迟 (米)
-    // --------------------------
-    double tropoDelay = ZTD * mf;
+    // ==============================
+    // 6. 总延迟
+    // ==============================
+    double tropoDelay = ZHD * mf_d + ZWD * mf_w;
 
-    // 调试输出
+    // ==============================
+    // 7. 数值保护（不再“归零”！）
+    // ==============================
+    if (!std::isfinite(tropoDelay) || tropoDelay > 20.0)
+        return NAN;
 
-    if (debug&&sat_id.toString()=="G10")
+    // ==============================
+    // 8. Debug
+    // ==============================
+    if (debug && sat_id.toString() == "G10")
     {
-        cout<<"sat:"<<sat_id<<endl;
-        cout << fixed << setprecision(6);
-        cout << "============================================" << endl;
-        cout << "           Saastamoinen 对流层延迟           " << endl;
-        cout << "============================================" << endl;
-        cout << "测站纬度    : " << B     << " rad" << endl;
-        cout << "测站高度    : " << H_m       << " m" << endl;
-        cout << "高度角      : " << E_deg     << " deg" << endl;
-        cout << "气压 P      : " << P         << " hPa" << endl;
-        cout << "温度 T      : " << T_c       << " ℃" << endl;
-        cout << "饱和水汽 es : " << es        << " hPa" << endl;
-        cout << "水汽 e      : " << e         << " hPa" << endl;
-        cout << "ZHD         : " << ZHD       << " m" << endl;
-        cout << "ZWD         : " << ZWD       << " m" << endl;
-        cout << "ZTD         : " << ZTD       << " m" << endl;
-        cout << "映射函数 mf : " << mf        << endl;
-        cout << "对流层延迟  : " << tropoDelay<< " m" << endl;
-        cout << "============================================" << endl;
+        cout << "sat: " << sat_id << endl;
+        cout << "E (deg): " << elev_deg << endl;
+        cout << "P: " << P << " hPa" << endl;
+        cout << "T: " << T_c << " C" << endl;
+        cout << "RH: " << RH << endl;
+        cout << "ZHD: " << ZHD << endl;
+        cout << "ZWD: " << ZWD << endl;
+        cout << "Tropo: " << tropoDelay << endl;
     }
 
     return tropoDelay;
 }
-
-
+/**
+ * 函数：wavelengthOfMW
+ * 功能：计算MW（Melbourne-Wübbena）组合的波长
+ * 参数：
+ *   sys     - 卫星系统标识
+ *   L1Type - L1观测类型标识
+ *   L2Type - L2观测类型标识
+ * 返回值：double - MW组合波长（米）
+ * 说明：
+ *   1. MW组合 = (f1*L1 - f2*L2)/(f1 - f2) - (f1*P1 + f2*P2)/(f1 + f2)
+ *   2. 波长 = 光速 / (f1 - f2)
+ *   3. 用于周跳探测中的阈值计算
+ */
 double wavelengthOfMW(string sys, string L1Type, string L2Type) {
     double f1 = getFreq(sys, L1Type);
     double f2 = getFreq(sys, L2Type);
@@ -949,11 +1364,43 @@ double wavelengthOfMW(string sys, string L1Type, string L2Type) {
     return wavelength;
 };
 
+/**
+ * 函数：varOfMW
+ * 功能：计算MW组合的初始方差（简化模型）
+ * 参数：
+ *   L1Type - L1观测类型标识
+ *   L2Type - L2观测类型标识
+ * 返回值：double - MW组合初始方差
+ * 说明：
+ *   1. 使用固定值：sqrt(2)/2 * 0.3
+ *   2. 简化模型，实际应用中应根据观测噪声调整
+ */
 double varOfMW(string, string L1Type, string L2Type) {
     double var = sqrt(2.0) / 2 * 0.3;
     return var;
 };
 
+/**
+ * 函数：detectCSMW
+ * 功能：使用MW（Melbourne-Wübbena）组合进行周跳探测
+ * 参数：
+ *   obsData               - 输入/输出：观测数据，删除无法探测周跳的卫星
+ *   csFlagData            - 输出：周跳标志映射（Variable -> 标志）
+ *   satEpochMWData        - 输出：卫星历元MW值映射（用于绘图分析）
+ *   satEpochMeanMWData    - 输出：卫星历元平均MW值映射
+ *   satEpochCSFlagData    - 输出：卫星历元周跳标志映射（放大到MW值便于绘图）
+ * 说明：
+ *   1. MW组合 = (f1*L1 - f2*L2)/(f1 - f2) - (f1*P1 + f2*P2)/(f1 + f2)
+ *   2. 使用滑动窗口统计计算MW值的均值和方差
+ *   3. 周跳判断条件：
+ *      a. 数据中断时间超过阈值（deltaTMax）
+ *      b. 当前MW值与均值之差超过最小周期数（minCycles * 波长）
+ *      c. 当前MW值与均值之差超过4倍标准差
+ *   4. 检测到周跳时重置滑动窗口统计量
+ *   5. 未检测到周跳时更新均值和方差
+ *   6. 将周跳标志存储到模糊度变量中
+ *   7. 目前仅支持GPS系统，需扩展BDS支持
+ */
 void detectCSMW(ObsData &obsData,
                 std::map<Variable, int> &csFlagData,
                 SatEpochValueMap &satEpochMWData,
@@ -1361,22 +1808,24 @@ void differenceStation(EquSys& equSysRover, VariableDataMap& csFlagRover,
     }
 
     // 单差周跳
-    cout << "differenceStation:" << "csFlagRover:" << endl;
-    for(auto cd:csFlagRover)
-    {
-        cout << "cs:" << cd.first << " flag:" << cd.second;
-    }
+    if(debug) {
+        cout << "differenceStation:" << "csFlagRover:" << endl;
+        for(auto cd:csFlagRover)
+        {
+            cout << "cs:" << cd.first << " flag:" << cd.second;
+        }
 
-    cout << "differenceStation:" << "csFlagBase:" << endl;
-    for(auto cd:csFlagBase)
-    {
-        cout << "cs:" << cd.first << " flag:" << cd.second;
-    }
+        cout << "differenceStation:" << "csFlagBase:" << endl;
+        for(auto cd:csFlagBase)
+        {
+            cout << "cs:" << cd.first << " flag:" << cd.second;
+        }
 
-    cout << "differenceStation:" << "csFlagSD:" << endl;
-    for(auto cd:csFlagSD)
-    {
-        cout << "cs:" << cd.first << " flag:" << cd.second;
+        cout << "differenceStation:" << "csFlagSD:" << endl;
+        for(auto cd:csFlagSD)
+        {
+            cout << "cs:" << cd.first << " flag:" << cd.second;
+        }
     }
 
 };
@@ -1689,3 +2138,24 @@ void printSolution(std::fstream & solStream,
     << fixed << setprecision(3)
     << xyzRover.transpose() << endl;
 };
+
+double getTGD(SatID sat_id,RinexNavStore navstore,std::string obsID,CommonTime& ctTime) {
+    double tgd = 0.0;
+    if (sat_id.system=="G") {
+        NavEphGPS nav_eph_gps=navstore.findGPSEph(sat_id,ctTime);
+        if (obsID=="C1") {
+            double gamma=pow(L1_FREQ_GPS/L2_FREQ_GPS,2);
+            tgd=nav_eph_gps.TGD*gamma;
+        }
+    }
+    else if (sat_id.system=="C") {
+        NavEphBDS nav_eph_bds=navstore.findBDSEph(sat_id,ctTime);
+        if (obsID=="C2") {
+            tgd=nav_eph_bds.TGD1;
+        }
+        else if (obsID=="C7") {
+            tgd=nav_eph_bds.TGD2;
+        }
+    }
+    return tgd;
+}

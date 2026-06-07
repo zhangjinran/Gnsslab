@@ -21,12 +21,31 @@
 #include "GnssStruct.h"
 #include "SolverLSQ.h"
 #include "RinexNavStore.hpp"
+#include "RinexObsReader.h"
 #include <Eigen/Eigen>
+
+// SPP IF组合单历元解算结果结构体
+struct SPPIFResult {
+    CommonTime epoch;
+    YDSTime ydsTime;  // 使用 YDSTime 格式（年/日/秒），与 exam5.3 保持一致
+    Vector3d xyz;
+    Vector3d enu;
+    double pdop;
+    int nSat;
+    double sigma0;
+    double meanResidual;
+    double rmsResidual;
+    double maxResidual;
+    double meanTGD;
+    double maxTGD;
+    double minTGD;
+    std::map<SatID, double> satTGDData;
+};
 
 class SPPIFCode {
 public:
     SPPIFCode()
-    : pEphStore(NULL), isRover(true), sigIFCode(1.0), cutOffElev(10)
+    : pEphStore(NULL), isRover(true), sigIFCode(1.0), cutOffElev(10), meoWeight(1.0), igsoWeight(0.25), geoWeight(0.25)
     {}
 
     void setStationAsBase()
@@ -38,18 +57,48 @@ public:
     {
         pEphStore = pStore;
     };
-
+    bool strangeDataDelete(ObsData &obsData,double parameter=3.0);
     void setIFCodeTypes(std::map<string, std::pair<string, string>>& ifTypes)
     {
         ifCodeTypes = ifTypes;
     };
+    
+    void setSelectedTypes(const std::map<string, std::set<string>>& types)
+    {
+        selectedTypes = types;
+    }
 
-    void solve(ObsData &obsData);
+    void solve(ObsData &obsData,bool TGD_bool=true,bool Trop_Bool=true);
+
+    std::vector<SPPIFResult> full_solve(RinexNavStore* pStore, std::map<string, std::pair<string, string>> ifCodeTypes, string roverFile, bool TGD_Bool=true, bool Trop_Bool=true);
+
+    void setSystemCode(const std::string& sys)
+    {
+        sysCode = sys;
+    }
+
+    // 设置卫星类型权重
+    void setSatTypeWeights(double meoW, double igsoW, double geoW)
+    {
+        meoWeight = meoW;
+        igsoWeight = igsoW;
+        geoWeight = geoW;
+    }
+
+    // BDS卫星类型处理
+    std::string getBDSSatType(const SatID& sat, CommonTime epoch);
+    double getTypeWeight(const SatID& sat, CommonTime epoch);
 
     std::map<SatID,Xvt> computeSatPos(ObsData &obsData);
+
+
+
     Xvt computeAtTransmitTime(const CommonTime& tr,
                               const double& pr,
                               const SatID& sat);
+
+
+    void correctTGD(ObsData &obsdata);
 
     void computeElevAzim(Eigen::Vector3d& xyz,
                           std::map<SatID,Xvt> & satXvtTransTime,
@@ -58,12 +107,13 @@ public:
 
     void convertObsType(ObsData &obsData);
     void computeIF(ObsData &obsData);
+    std::map<SatID,double> computeTropDelay(ObsData &obsdata,std::map<SatID, double>&satElevData);
     std::map<SatID,Xvt> earthRotation(Eigen::Vector3d& xyz,
                                       std::map<SatID,Xvt> & satXvtTransTime);
     EquSys linearize(Eigen::Vector3d& xyz,
                      std::map<SatID,Xvt>& satXvtRecTime,
                      SatValueMap& satElevData,
-                     ObsData& obsData);
+                     ObsData& obsData,std::map<SatID,double>tropDelay);
 
     EquSys getEquSys()
     {
@@ -106,6 +156,12 @@ protected:
     bool isRover;
     double sigIFCode;
 
+    std::string sysCode;
+    
+    // 卫星类型权重
+    double meoWeight ;    // MEO 卫星权重
+    double igsoWeight ;   // IGSO 卫星权重
+    double geoWeight ;    // GEO 卫星权重
 
     EquSys equSys;
     Result result;
@@ -119,12 +175,17 @@ protected:
     SatValueMap  satElevData;
     SatValueMap  satAzimData;
     SatValueMap  satTropData;
+    SatValueMap  satIonoData;
 
     SolverLSQ  solverLsq;
 
     RinexNavStore* pEphStore;
 
     std::map<string, std::pair<string, string>> ifCodeTypes;
+    
+    std::map<string, std::set<string>> selectedTypes;
+
+    std::map<SatID, double> satTGDData;
 
     SatID datumSat;
 

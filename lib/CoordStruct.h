@@ -23,6 +23,8 @@
 #include <stdexcept>
 #include <memory>
 #include <iomanip>
+#include <vector>
+#include <algorithm>
 #include "Const.h"
 #include <Eigen/Eigen>
 
@@ -45,8 +47,11 @@ public:
     // 获取地球引力常数
     virtual double getGM() const = 0;
 
+    // 获取框架名称
+    virtual std::string getName() const = 0;
+
     // 默认实现（可选）
-    virtual double getJ2() const {
+    virtual double getJ2() const{
         throw std::runtime_error("getJ2() not implemented for this reference frame.");
     }
 
@@ -74,6 +79,10 @@ public:
 
     double getGM() const override {
         return 3.986004418e14; // 地球引力常数 (米^3/秒^2)
+    }
+
+    std::string getName() const override {
+        return "WGS84";
     }
 };
 
@@ -106,6 +115,10 @@ public:
     virtual double c_km() const throw()
     { return (C_MPS / 1000); }
 
+    std::string getName() const override {
+        return "GPS";
+    }
+
 }; // class GPSEllipsoid
 
 // 北斗系统采用的椭球参数（CGCS2000/GRS80）
@@ -137,29 +150,131 @@ public:
     /// 扁率倒数，与 GRS80 一致
     virtual double invf() const throw()
     { return 298.257222101; }
+
+    std::string getName() const override {
+        return "BDS";
+    }
 };
 
 // PZ90 参考框架
 class PZ90 : public ReferenceFrame {
 public:
+
+    // Semi-major axis [m]
     double getA() const override {
-        return 6378136.0; // 长半轴 (米)
+        return 6378136.0;
+    }
+
+    // Flattening
+    double getF() const override {
+        return 1.0 / 298.257839303;
+    }
+
+    // Earth rotation rate [rad/s]
+    double getOmega() const override {
+        return 7.2921150e-5;
+    }
+
+    // Gravitational constant [m^3/s^2]
+    double getGM() const override {
+        return 3.9860044e14;
+    }
+
+    // Second zonal harmonic
+    double getJ2() const override {
+        return 1.0826257e-3;
+    }
+
+    std::string getName() const override {
+        return "GLONASS";
+    }
+};
+
+// Galileo 参考框架（GTRF）
+// Galileo 使用与 WGS84 相同的椭球参数
+class Galileo : public GPSEllipsoid {
+public:
+    double getA() const override {
+        return 6378137.0; // 长半轴 (米)
     }
 
     double getF() const override {
-        return 1 / 298.257839303; // 扁率
+        return 1 / 298.257223563; // 扁率
     }
 
     double getOmega() const override {
-        return 7.2921150e-5; // 地球自转角速度 (弧度/秒)
+        return 7.2921151467e-5; // 地球自转角速度 (弧度/秒)，与 GPS 相同
     }
 
     double getGM() const override {
-        return 3.9860044e14; // 地球引力常数 (米^3/秒^2)
+        return 3.986005e14; // 地球引力常数 (米^3/秒^2)，与 GPS 相同
     }
 
-    double getJ2() const override {
-        return 1.08262575e-3; // 二阶田谐系数
+    std::string getName() const override {
+        return "Galileo";
+    }
+};
+
+// IRNSS 参考框架
+// IRNSS 使用 WGS84 椭球参数
+class IRNSS : public WGS84 {
+public:
+    double getA() const override {
+        return 6378137.0; // 长半轴 (米)
+    }
+
+    double getF() const override {
+        return 1 / 298.257223563; // 扁率
+    }
+
+    double getOmega() const override {
+        return 7.292115e-5; // 地球自转角速度 (弧度/秒)
+    }
+
+    double getGM() const override {
+        return 3.986004418e14; // 地球引力常数 (米^3/秒^2)
+    }
+
+    std::string getName() const override {
+        return "IRNSS";
+    }
+};
+
+// 参考框架工厂类
+// 使用工厂模式动态创建不同GNSS系统的参考框架对象
+class ReferenceFrameFactory {
+public:
+    // 根据系统名称创建参考框架对象
+    static std::unique_ptr<ReferenceFrame> create(const std::string& system) {
+        if (system == "GPS" || system == "gps") {
+            return std::make_unique<GPSEllipsoid>();
+        } else if (system == "BDS" || system == "bds" || system == "BeiDou") {
+            return std::make_unique<BDSEllipsoid>();
+        } else if (system == "GLONASS" || system == "glonass" || system == "GLO") {
+            return std::make_unique<PZ90>();
+        } else if (system == "Galileo" || system == "galileo" || system == "GAL") {
+            return std::make_unique<Galileo>();
+        } else if (system == "QZSS" || system == "qzss") {
+            return std::make_unique<GPSEllipsoid>(); // QZSS使用与GPS相同的参数
+        } else if (system == "IRNSS" || system == "irnss") {
+            return std::make_unique<IRNSS>();
+        } else if (system == "WGS84" || system == "wgs84") {
+            return std::make_unique<WGS84>();
+        } else {
+            // 默认返回WGS84
+            return std::make_unique<WGS84>();
+        }
+    }
+
+    // 获取支持的系统列表
+    static std::vector<std::string> getSupportedSystems() {
+        return {"GPS", "BDS", "GLONASS", "Galileo", "QZSS", "IRNSS", "WGS84"};
+    }
+
+    // 检查系统是否支持
+    static bool isSupported(const std::string& system) {
+        std::vector<std::string> systems = getSupportedSystems();
+        return std::find(systems.begin(), systems.end(), system) != systems.end();
     }
 };
 

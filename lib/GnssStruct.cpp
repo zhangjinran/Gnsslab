@@ -20,9 +20,9 @@
 // Variable
 //====
 
-// 初始化静态成员
+// 初始化静态成员 - 必须与 ParameterName 枚举顺序一致
 const string Parameter::paraNameStrings[] = {
-        "Unknown", "dX", "dY", "dZ", "cdt", "ifb", "iono", "ambiguity"
+        "Unknown", "dX", "dY", "dZ", "cdt", "cdt_BDS", "ifb", "iono", "ambiguity", "bias"
 };
 
 bool Variable::operator<(const Variable &right) const {
@@ -41,7 +41,7 @@ bool Variable::operator<(const Variable &right) const {
     }
 }
 
-bool Variable::operator==(const Variable &right) {
+bool Variable::operator==(const Variable &right) const {
     if (station == right.station &&
         sat == right.sat &&
         obsID == right.obsID &&
@@ -52,9 +52,6 @@ bool Variable::operator==(const Variable &right) {
     }
 }
 
-bool Variable::operator!=(const Variable &right) {
+bool Variable::operator!=(const Variable &right) const {
     return (!((*this) == right));
 }
-
-
-
