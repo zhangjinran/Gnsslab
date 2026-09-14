@@ -26,6 +26,7 @@
 #include "GnssFunc.h"
 #include "NavEphGPS.hpp"
 #include "NavEphBDS.hpp"
+#include "NavEphGLONASS.hpp"
 
 #define debug 0
 
@@ -57,9 +58,9 @@ void SPPIFCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool) {
 
     // 先进行TGD改正（必须在IF组合之前）
     // TGD是频率相关误差，必须在形成IF之前应用于单频观测
-    // if (TGD_bool) {
-    //     correctTGD(obsData);
-    // }
+    if (TGD_bool) {
+        correctTGD(obsData);
+    }
 
     // 计算IF组合
     computeIF(obsData); 
@@ -98,7 +99,10 @@ void SPPIFCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool) {
         }
 
 
-        satXvtRecTime = earthRotation(xyz, satXvtTransTime);
+        if (earthRotationEnable)
+            satXvtRecTime = earthRotation(xyz, satXvtTransTime);
+        else
+            satXvtRecTime = satXvtTransTime;
 
         if(debug)
         {
@@ -142,8 +146,14 @@ void SPPIFCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool) {
 
             // todo:
             // computeIonoDelay();
-            if (Trop_Bool)
+            if (Trop_Bool) {
                 tropdelaymap=computeTropDelay(obsData,satElevData);
+                if (debug) {
+                    cout << "\n=== 对流层延迟 ===" << endl;
+                    for (auto& td : tropdelaymap)
+                        cout << td.first << "  " << fixed << setprecision(3) << td.second << " m" << endl;
+                }
+            }
         }
 
         equSys = linearize(xyz, satXvtRecTime, satElevData, obsData,tropdelaymap);
@@ -158,7 +168,17 @@ void SPPIFCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool) {
 
         solverLsq.solve(equSys);
 
-
+        if (debug) {
+            VariableSet vs = equSys.varSet;
+            VectorXd st = solverLsq.getState();
+            double cdt_val = 0;
+            try { cdt_val = solverLsq.getSolution(Parameter::cdt, vs, st); } catch (...) {}
+            cout << "\n=== LSQ 结果 ===" << endl;
+            cout << "dxyz: (" << fixed << setprecision(3)
+                 << solverLsq.getdxyz()[0] << ", "
+                 << solverLsq.getdxyz()[1] << ", "
+                 << solverLsq.getdxyz()[2] << ")  cdt: " << cdt_val << endl;
+        }
 
         dxyz = solverLsq.getdxyz();
 
@@ -310,7 +330,10 @@ noexcept(false) {
 
         }
         tt = transmit;
-        tt -= (xvt.clkbias + xvt.relcorr);
+        if (relativityEnable)
+            tt -= (xvt.clkbias + xvt.relcorr);
+        else
+            tt -= xvt.clkbias;
     }
     return xvt;
 };
@@ -564,6 +587,23 @@ EquSys SPPIFCode::linearize(Eigen::Vector3d& xyz,
                                   ObsData &obsData,std::map<SatID,double>tropDelay=std::map<SatID,double>()) {
     EquSys equSysTemp;
     equSysTemp.station = obsData.station;
+
+    // 计算 GLONASS 平均频道号（IFB 基准）
+    double glonassK0 = 0.0;
+    int nGlo = 0;
+    {
+        double sumK = 0;
+        for (auto& st : obsData.satTypeValueData) {
+            if (st.first.system == "R" && pEphStore != NULL) {
+                try {
+                    NavEphGLONASS e = pEphStore->findGLOEph(st.first, obsData.epoch);
+                    sumK += e.freqNum; nGlo++;
+                } catch (...) {}
+            }
+        }
+        glonassK0 = nGlo > 0 ? sumK / nGlo : 0.0;
+    }
+
     // 自动收集当前观测中的所有系统
     std::set<std::string> availableSystems;
 
@@ -618,6 +658,28 @@ EquSys SPPIFCode::linearize(Eigen::Vector3d& xyz,
         cosines[0] = (xyz.x() - satXYZ[0]) / rho;
         cosines[1] = (xyz.y() - satXYZ[1]) / rho;
         cosines[2] = (xyz.z() - satXYZ[2]) / rho;
+
+        if (debug) {
+            // 输出线性化信息（对照课本表 6-6, 6-7）
+            double clk = satXvtRecTime.at(sat).clkbias * C_MPS;
+            double rel = satXvtRecTime.at(sat).relcorr * C_MPS;
+            double obs = 0;
+            for (auto& tv : stv.second) {
+                if (tv.first.size() >= 2 && tv.first.substr(0,2) == "IF") {
+                    obs = tv.second;
+                    break;
+                }
+            }
+            double prefit_val = obs - (rho - clk - rel + slantTrop);
+            double w = 1.0;
+            if (elev < 30) w = sin(elevRad) * sin(elevRad);
+            cout << "[" << sat << "] rho=" << fixed << setprecision(3) << rho
+                 << " obs=" << obs << " prefit=" << prefit_val
+                 << " cos=(" << cosines[0] << "," << cosines[1] << "," << cosines[2] << ")"
+                 << " w=" << w
+                 << " trop=" << slantTrop
+                 << endl;
+        }
 
         // todo
         // 请补充rhoDot，用于后续的单点测速
@@ -683,6 +745,21 @@ EquSys SPPIFCode::linearize(Eigen::Vector3d& xyz,
 
 
 
+
+                // GLONASS IFB: 估计线性频间偏差 a₁·(k - k₀)
+                // k₀ 在 linearize 入口处已计算，a₀ 被钟差吸收
+                // 至少 6 颗 GLONASS 卫星以保证自由度 > 0
+                if (sys == "R" && pEphStore != NULL && nGlo >= 6) {
+                    int freqNum = 0;
+                    try {
+                        NavEphGLONASS e = pEphStore->findGLOEph(sat, obsData.epoch);
+                        freqNum = e.freqNum;
+                    } catch (...) {}
+
+                    Variable ifbVar(obsData.station, Parameter::ifb);
+                    equSysTemp.obsEquData[equID].varCoeffData[ifbVar] = freqNum - glonassK0;
+                    varSetTemp.insert(ifbVar);
+                }
 
                 // Compute the weight according to elevation
                 double elevWeight;
@@ -1013,7 +1090,7 @@ bool SPPIFCode::strangeDataDelete(ObsData &obsData,double parameter) {
             badIndex = i;
         }
     }
-    if(maxv > threshold){
+    if(maxv > threshold || maxv > 100.0){
 
         SatID badSat = equSys.satList[badIndex];
 
@@ -1024,7 +1101,20 @@ bool SPPIFCode::strangeDataDelete(ObsData &obsData,double parameter) {
                 <<maxv<<endl;
         }
 
-        obsData.satTypeValueData.erase(badSat);
+        // 超大残差（>100m）：直接删星
+        if (maxv > 100.0) {
+            obsData.satTypeValueData.erase(badSat);
+            if (debug) cout << "  超大残差，直接删星: " << badSat << " (" << maxv << "m)" << endl;
+            return true;
+        }
+
+        // 中等残差：加入降权集合
+        if (outlierSats.find(badSat) != outlierSats.end()) {
+            if (debug) cout << "  卫星已在降权集合，跳过" << endl;
+            return false;
+        }
+        outlierSats.insert(badSat);
+        if (debug) cout << "  加入降权集合: " << badSat << endl;
         return true;
 
     }

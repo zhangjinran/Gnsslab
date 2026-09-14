@@ -151,7 +151,7 @@ int main() {
     // ==================== BDS 单系统测试 ====================
     std::cout << "\n=== BDS Single System Tests ===" << std::endl;
     std::map<string, std::set<string>> bdsTypes = {
-        {"C", {"C1X"}}
+        {"C", {"C2I"}}
     };
     for (const auto& mode : testModes) {
         runSPPWithErrorModel("BDS", roverFile, navFile, outputPath, mode.first, mode.second, bdsTypes);

@@ -167,10 +167,10 @@ int main() {
     // ==================== BDS 单系统测试 ====================
     std::cout << "\n=== BDS Single System Tests ===" << std::endl;
     std::map<string, std::pair<string, string>> bdsIfCodeTypes = {
-        {"C", {"C1", "C5"}}  // BDS B1I + B2I 做 IF 组合
+        {"C", {"C2", "C7"}}  // BDS B1I(1561MHz) + B2I(1207MHz) IF，匹配 TGD 参数
     };
     std::map<string, std::set<string>> bdsSelectedTypes = {
-        {"C", {"C1X", "C5X"}}  // 读取 BDS 的这些观测类型
+        {"C", {"C2I", "C7I"}}  // 读取 BDS B1I + B2I 观测值
     };
     for (const auto& mode : testModes) {
         runSingleSystemSPPIF("BDS", roverFile, navFile, outputPath, bdsIfCodeTypes, bdsSelectedTypes, mode.first, mode.second);

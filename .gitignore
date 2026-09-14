@@ -1,0 +1,59 @@
+
+# ===================
+# Build files
+# ===================
+
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+
+# ===================
+# IDE
+# ===================
+
+.idea/
+.vscode/
+
+
+# ===================
+# Binary
+# ===================
+
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+
+
+# ===================
+# Runtime output
+# ===================
+
+logs/
+*.log
+*.out
+
+
+# ===================
+# Local documents
+# ===================
+
+shixi/
+
+
+# ===================
+# Temporary analysis
+# ===================
+
+dependency_*.txt
+keep_files.txt
+migration_keep_files.txt
+# GNSS data
+data/*.zip
+data/data/rtk/

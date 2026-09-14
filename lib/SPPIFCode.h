@@ -85,6 +85,16 @@ public:
         geoWeight = geoW;
     }
 
+    void setRelativityEnable(bool enable)
+    {
+        relativityEnable = enable;
+    }
+
+    void setEarthRotationEnable(bool enable)
+    {
+        earthRotationEnable = enable;
+    }
+
     // BDS卫星类型处理
     std::string getBDSSatType(const SatID& sat, CommonTime epoch);
     double getTypeWeight(const SatID& sat, CommonTime epoch);
@@ -163,6 +173,9 @@ protected:
     double igsoWeight ;   // IGSO 卫星权重
     double geoWeight ;    // GEO 卫星权重
 
+    bool relativityEnable = true;      // 相对论效应改正开关
+    bool earthRotationEnable = true;   // 地球自转改正开关
+
     EquSys equSys;
     Result result;
 
@@ -189,7 +202,11 @@ protected:
 
     SatID datumSat;
 
+    // 粗差卫星降权集合（不删除，仅降权）
+    std::set<SatID> outlierSats;
+
 };
+
 
 
 #endif //GNSSLAB_SPPIFCODE_H

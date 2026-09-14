@@ -395,6 +395,9 @@ int main()
         SatID("C46"),
         SatID("C56"),// BDS MEO
         SatID("C58"),// BDS MEO
+        SatID("C60"),// BDS MEO
+        SatID("C61"),
+        SatID("C62"),
     };
 
     CivilTime ct_test(

@@ -22,7 +22,10 @@
 
 // 初始化静态成员 - 必须与 ParameterName 枚举顺序一致
 const string Parameter::paraNameStrings[] = {
-        "Unknown", "dX", "dY", "dZ", "cdt", "cdt_BDS", "ifb", "iono", "ambiguity", "bias"
+        "Unknown", "dX", "dY", "dZ", "cdt", "cdt_BDS",
+        "cdt_GAL", "cdt_GLO", "cdt_QZS", "cdt_IRN",
+        "dVx", "dVy", "dVz", "cdt_dot",
+        "ifb", "iono", "ambiguity", "bias"
 };
 
 bool Variable::operator<(const Variable &right) const {

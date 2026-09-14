@@ -2,6 +2,251 @@
 
 ---
 
+### 2026-06-10
+
+**今日任务完成情况**:
+
+| 序号 | 任务 | 模块 | 状态 |
+|------|------|------|------|
+| 1 | BDS GEO 卫星判断扩展到 BDS-3（PRN 59-62） | NavEphBDS | ✅ 完成 |
+| 2 | 粗差探测：100m 硬阈值 + 中等残差降权 | SPPCode / SPPIFCode / SPPGFCode | ✅ 完成 |
+| 3 | BDS SPP correctTGD 补 C2(C2I) 分支 | SPPCode | ✅ 完成 |
+| 4 | 多系统 SPP 定位（exam-6.7） | exam-6.7 / SPPCode | ✅ 完成 |
+| 5 | SPPIFCode / SPPGFCode 粗差降权 | SPPIFCode / SPPGFCode | ✅ 完成 |
+| 6 | 多系统 SPP 可视化 | gnss_draw | ✅ 完成 |
+
+**修复**:
+
+1. **⭐⭐⭐ BDS 残差错误——根因：GEO 卫星判定遗漏 BDS-3** (`lib/NavEphBDS.cpp` `svXvt(t, sat)`):
+
+   **现象**
+   BDS 单系统 SPP 定位的 ENU 正常（H_RMS~11m），但 MeanResidual = -31,800m、MaxResidual = 315,373m，
+   远大于 GPS/Galileo/GLONASS 的正常值（~1-5m）。Sigma0 却只有 0.8m，与残差不一致。
+   其他系统（GPS/Galileo/GLONASS）无此问题。
+
+   **排查过程**
+   1. 检查输出文件：确认残差列数值异常仅出现于 BDS
+   2. 检查 `full_solve()` 中 `solverLsq.getResiduals()` 调用——正确获取后验残差，逻辑无误
+   3. 检查 `correctTGD()`——BDS C6I(B3I) 为钟差参考频率，无需 TGD，非残差根因
+   4. 运行 debug 模式输出中间量，发现 C01 等低号星残差正常（~5m），但 C59-C62 等高号星未出现于 debug 输出
+   5. 查阅课本表 4-6，确认 BDS GEO 卫星为 PRN 1-5 (BDS-2) + PRN 59-62 (BDS-3)
+   6. 检查 `svXvt(t, sat)` 代码：原 GEO 判断为 `sat.id >= 1 && sat.id <= 5`，**遗漏 BDS-3 GEO**
+   7. BDS-3 GEO 卫星（C59-C62）被当作 MEO/IGSO 处理，缺少 RX(+5°) 旋转和 RZ(ωe·tk) 地球自转改正，
+      位置偏差数百公里，导致后验残差数十万米
+
+   **修正**
+   - 改前：`if (!(sat.system == "C" && sat.id >= 1 && sat.id <= 5))`
+   - 改后：`bool isGEO = (sat.id >= 1 && sat.id <= 5) || (sat.id >= 59 && sat.id <= 62);`
+
+   **验证**
+   经用户确认，此修正排除了 BDS 残差异常根因。
+
+2. **粗差探测统一化** (`lib/SPPCode.cpp` / `lib/SPPIFCode.cpp` / `lib/SPPGFCode.cpp`):
+   - SPPCode：完成降权改造后，补充 100m 硬阈值 → 超过 100m 直接删星
+   - SPPIFCode：原为 `erase()`，改为降权（`outlierSats.insert`）+ 100m 硬删
+   - SPPGFCode：同上
+   - 三组件的 `strangeDataDelete` 现统一为三级策略：
+     - `maxv > 100.0` → 直接删星（超大残差）
+     - `maxv > threshold` → 加入 `outlierSats` 降权（非删星）
+     - 已降权的卫星不再重复触发剔除
+
+3. **BDS SPP correctTGD 补 C2(C2I) 分支** (`lib/SPPCode.cpp`):
+   - 原：BDS 分支仅处理 `C1` (B1C)，且 Delta_TGD = 0
+   - 改：新增 `else if (st.first == "C2")` 分支，应用 `Delta_TGD = -c·TGD1`
+   - 验证：BDS SPP 使用 C2I (B1I) 时 TGD 改正生效
+
+4. **BDS SPP 观测类型 C6I → C2I** (`examples/exam-5.3-spp_atmospheric_test.cpp`):
+   - 原：`{"C", {"C6I"}}`（B3I，钟差参考频率，无需 TGD）
+   - 改：`{"C", {"C2I"}}`（B1I，需 TGD1 改正）
+   - 理由：C2I 信号质量优于 C6I，且与 IF/GF 组合的 B1I+B2I 保持一致的频率基础
+
+5. **多系统 SPP 定位** (`examples/exam-6.7-multi-spp.cpp`):
+   - 新增 `runMultiSystemSPP()` 函数式封装，支持任意系统组合
+   - 修改 `SPPCode::full_solve()` 的 `sysCode.empty()` 分支：
+     改前：硬编码处理 GPS 和 BDS
+     改后：遍历 `sysTypes` 中所有系统
+   - 测试了 GPS+BDS、GPS+Galileo、BDS+Galileo、3系统、4系统、6系统共 6 种组合
+   - 结果：4 系统（GPS+BDS+Gal+GLO）H_RMS=6.75m，优于单 GPS（6.84m）
+
+---
+
+### 2026-06-06
+
+**今日任务完成情况**:
+
+| 序号 | 任务 | 模块 | 状态 |
+|------|------|------|------|
+| 1 | GLONASS 波长依赖频道号修正 | SPPCode | ✅ 完成 |
+| 2 | 双频非组合定位 (SPPGFCode) 修复 | SPPGFCode | ✅ 完成 |
+| 3 | BDS GEO 卫星 RX 旋转符号修正 | NavEphBDS | ⭐ 重点 |
+| 4 | Klobuchar 电离层模型参数修正 | GnssFunc | ✅ 完成 |
+| 5 | Saastamoinen 对流层模型饱和水汽压公式修正 | GnssFunc | ✅ 完成 |
+| 6 | BDS IF 频率对 + TGD 改正开启 | SPPIFCode / exam-6.1 | ✅ 完成 |
+| 7 | BDS GF 缺少 TGD2 改正 | SPPGFCode | ✅ 完成 |
+
+**新增**:
+
+1. **单点测速可视化** (`gnss_draw/scripts/spp_velocity/`):
+   - 新增 loader / plotter / runner，绘制速度时序图、直方图、VDOP-NSAT 图、跨系统对比图
+
+**修复**:
+
+1. **GLONASS 波长依赖频道号** (`lib/SPPCode.cpp` `linearizeVelocity()`):
+   - 原：`getWavelength("R", 1)` 返回 k=0 的固定波长（L1=1602MHz）
+   - 影响：GLONASS 速度误差 ~1 m/s，其他系统 ~0.05 m/s
+   - 改：GLONASS 卫星从星历读取 `freqNum`，调用 `NavEphGLONASS::getFreq()` 计算实际频率
+     `λ = c / (1602.0 + 0.5625×k) MHz`
+   - 结果：GLONASS 速度精度从 ~1 m/s 提升至 ~0.01 m/s
+
+2. **双频非组合定位 (SPPGFCode) 多项修复** (`lib/SPPGFCode.h`, `lib/SPPGFCode.cpp`):
+   - `computeSatPos()`：硬编码 `"C1"` → 动态找第一个 C 类型观测值
+   - `linearize()`：
+     - 过滤条件从 `system=="G"||"C"` 扩展为所有 C 类型观测值（支持 E/R 系统）
+     - γ 计算：`getFreq(equID.toString())` → `getGamma(sat.system, "C1", tv.first)`
+     - 钟差参数：扩展至 E/R/J/I 全部六系统
+   - `solve()`：新增 PDOP 检测（NaN/∞/负 + >10）、sigma0>10 检测、`strangeDataDelete()` 粗差剔除外循环、残差统计
+   - 新增 `GFEpochSkipStats` 计数结构体 + `printEpochSkipStats()` 打印
+   - 新增 `getPDOP()` / `getSigma0()` / `getMeanResidual()` / `getMaxResidual()` getters
+   - 新增 `printSolution()` 声明
+   - `full_solve()`：加入 `readObsRover.setSelectedTypes(sysTypes)` 使 chooseObs 生效
+   - `SolverLSQ::solveGeneral()`：新建通用求解函数，不硬编码提取 dX/dY/dZ
+   - `exam-6.3-GFCode.cpp`：重写为 4 系统测试，输出完整 ENU/PDOP/NSAT/Sigma0/残差
+
+3. **⭐⭐⭐ BDS GEO 卫星位置计算错误** (`lib/NavEphBDS.cpp` `svXvt(t, sat)`):
+
+   **错误 1 —— RX 旋转方向反了**
+   - 原：`const double GEO_ROT_ANGLE = -5.0 * DEG_TO_RAD;`
+   - 改：`const double GEO_ROT_ANGLE = 5.0 * DEG_TO_RAD;`
+   - 影响：C01 Z 坐标偏差 420 万米（-4,001,885 → 正确值 198,204）
+   - 纠正过程：编写 `exam-diagnostic-bds.cpp` 输出中间量，逐项对比课本表 4-8，
+     发现 RX(-5°) 使 Z 方向完全反号，改为 +5° 后 Z 从 -400 万米纠正到 +26 万米
+
+   **错误 2 —— GEO 缺少 RZ(ωe·tk) 地球自转旋转**
+   - 原：仅做 RX 旋转，缺少 RZ 旋转
+   - 改：补充完整 `[Xg,Yg,Zg] = RZ(ωe·tk) · RX(+5°) · [Xk,Yk,Zk]`
+   - 影响：Y 偏差从 ~30 万米降至 8 米
+
+   **错误 3 —— GEO 使用 MEO 的 Ωk 公式**
+   - 原：Ωk = Ω₀ + (Ω̇ - ωₑ)·tk - ωₑ·toe（MEO 公式）
+   - 改：Ωk = Ω₀ + Ω̇·tk - ωₑ·toe（GEO 专用公式，无 ωₑ 减项）
+   - 影响：Ωk 差 0.022 rad → 位置偏差 ~900 千米
+
+   **验证结果**（C01 卫星，2025-01-01 00:04:46 BDT）：
+   ```
+            X                Y                Z
+   改前: -34,273,197     24,207,945     -4,001,885
+   改后: -34,271,596     24,537,957        198,204
+   课本: -34,271,596     24,537,957        198,204
+   ```
+   三个坐标逐米吻合 ✅
+
+
+
+4. **Klobuchar 电离层模型参数修正** (`lib/GnssFunc.cpp`):
+   - 错误 1 —— 地磁极坐标非标准：
+     - 原：`φP=79.5°`, `λP=288.0°`
+     - 改：`φP=78.3°`, `λP=291.0°`（课本/ICD 标准值）
+   - 错误 2 —— GPS 电离层参数误取 BDS 数据：
+     - 原：`navStore.ionoCorrData.begin()` 取到的是 BDSA（BDS PRN02 参数），非 GPSA
+     - 改：按系统名查找 `"GPSA"/"GPSB"`、`"QZSA"/"QZSB"`，G/R/I 共用 GPS 参数
+   - 影响：GPS L1 电离层延迟从 6.96m → 5.816m（与课本例 5-2 完全吻合）
+   - 验证：α/β 参数、地心角、IPP 坐标、地磁纬度、幅度/周期/相位/倾斜因子/最终延迟全部逐项核对
+
+5. **Saastamoinen 对流层模型饱和水汽压公式修正** (`lib/GnssFunc.cpp` `saastamoinenTroposphericCorrection()`):
+   - 原：`es = 6.1078·exp(17.27·T_c/(T_c+237.3))`（Magnus 公式，T 为摄氏度）
+   - 改：`es = 6.108·exp((17.15·T_k-4684)/(T_k-38.45))`（课本公式 5.58，T 为开尔文温度）
+   - 影响：ZHD/ZWD 不变，饱和水汽压偏差 ~0.09 hPa → 最终延迟差 < 1mm
+   - 验证：P/T/es/ZHD/ZWD/倾斜延迟全部逐项与课本例 5-3 核对，偏差仅 ~0.4mm（来自映射函数差异，工程可忽略）
+
+6. **BDS IF 组合频率对与 TGD 修正** (`lib/SPPIFCode.cpp`, `examples/exam-6.1-sppif.cpp`):
+   - 错误 1 —— IF 组合使用了错误的 BDS 频率对：
+     - 原：`{"C1", "C5"}` → B1C(1575.4MHz) + B2a(1176.5MHz)，与 TGD 参数定义频率不匹配
+     - 改：`{"C2", "C7"}` → B1I(1561.1MHz) + B2I(1207.1MHz)，匹配 TGD1/TGD2 参数
+   - 错误 2 —— `correctTGD()` 在 `solve()` 中被注释掉从未执行：
+     - 原：三行 `// if (TGD_bool) { correctTGD(obsData); }` 被注释
+     - 改：取消注释，恢复 TGD 改正流程
+   - 效果：BDS IF H_RMS 从 23.34m → 5.99m(改频) → 3.04m(开TGD)
+
+7. **BDS GF 组合缺少 B2I 的 TGD2 改正** (`lib/SPPGFCode.cpp` `correctTGD()`):
+   - 错误：`correctTGD` 只处理了 B1I(C2) 的 TGD1，缺少 B2I(C7) 的 TGD2 分支
+   - 改：新增 `else if (st.first == "C7")` 分支，应用 `Delta_TGD = -c·TGD2`
+   - 效果：BDS GF H_RMS 从 13.79m → 6.63m（▼52%）
+
+---
+
+### 2026-06-05
+
+**今日任务完成情况**:
+
+| 序号 | 任务 | 模块 | 状态 |
+|------|------|------|------|
+| 1 | SPPCode 历元跳过统计 | SPPCode | ✅ 完成 |
+| 2 | PDOP < 10 检测恢复 | SPPCode | ✅ 完成 |
+| 3 | 单点测速实现（exam-6.6）| SPPCode / SolverLSQ | ✅ 完成 |
+
+**新增**:
+
+1. **历元跳过统计** (`lib/SPPCode.h`, `lib/SPPCode.cpp`):
+   - 新增 `EpochSkipStats` 结构体，统计 10 种跳过原因（6 种历元级 + 4 种卫星级）
+   - `printEpochSkipStats()` 改为静态函数，接受 `const EpochSkipStats&` 参数
+   - `full_solve()` 末尾统一不再打印，由调用方在 exam 中收集所有报告后统一输出
+   - `exam-5.3-spp_atmospheric_test.cpp`：改为收集 `EpochSkipStats` 报告，
+     在末尾统一打印 16 份（4 系统 × 4 模式）跳过统计
+
+2. **PDOP 检测恢复** (`lib/SPPCode.cpp`):
+   - 在 `solve()` 中恢复 PDOP 异常值检查：`std::isnan(pdop) || std::isinf(pdop) || pdop < 0`
+   - 恢复 `pdop > 10.0` 检测
+   - 对应更新 `epochSkipStats.pdopInvalid` 和 `epochSkipStats.pdopExceed` 计数器
+
+3. **单点测速 (SPP Velocity)**:
+   - **新增参数类型** (`lib/GnssStruct.h`, `lib/GnssStruct.cpp`)：
+     `Parameter::dVx, dVy, dVz, cdt_dot`
+   - **新增通用求解器** (`lib/SolverLSQ.h`, `lib/SolverLSQ.cpp`)：
+     `solveGeneral()` — 与 `solve()` 相同但不提取 dX/dY/dZ，适用于非常规参数
+   - **新增测速功能** (`lib/SPPCode.h`, `lib/SPPCode.cpp`)：
+     - `SPPVelocityResult` 结构体：包含 `vel`(ECEF速度)、`cdt_dot`、`vdop`、`nSat`
+     - `linearizeVelocity()`：构建多普勒观测方程，计算 `l_rs = -λ·D + cosines·Ẋ^s + c·δṫ_s`
+     - `solveVelocity()`：调用 `linearizeVelocity()` + `solveGeneral()` 求解
+   - **新增示例程序** (`examples/exam-6.6-spp-velocity.cpp`)：
+     对 GPS/BDS/Galileo/GLONASS 四个系统分别进行单点测速，
+     输出位置 + ENU + 速度 + VDOP
+   - **新增 CMake target** (`CMakeLists.txt`)：`spp_velocity`
+
+**Bug 修复**:
+
+1. **GLONASS 波长计算错误** (`lib/SPPCode.cpp` `linearizeVelocity()`):
+   - 原：GLONASS 卫星使用 `getWavelength("R", n)` 返回固定波长（k=0 近似值）
+   - 影响：波长误差 ~0.25% → Doppler → 速度误差 ~1 m/s
+   - 改：GLONASS 卫星从星历读取 `freqNum`（频道号 k），调用
+     `NavEphGLONASS::getFreq()` 计算实际频率，再算波长
+     `λ = c / (1602.0 + 0.5625×k) MHz`
+   - 参考：`SPPIFCode.cpp` 中对 GLONASS 频率的处理方式
+   - 修正后：GLONASS 速度精度从 ~1 m/s 提升至 ~0.01 m/s
+
+2. **历元跳过统计输出位置** (`lib/SPPCode.cpp`):
+   - 原：`full_solve()` 末尾每次调用都打印，导致 exam-5.3 中间输出 16 份统计
+   - 改：仅在 `full_solve()` 中累计，由 exam 统一在末尾打印
+
+2. **PDOP 检测被误删**：
+   - 原：PDOP 异常值和超限检测在之前被删除
+   - 改：恢复检测逻辑，同时更新 `epochSkipStats` 计数器
+
+3. **SolverLSQ dX/dY/dZ 硬编码提取** (`lib/SolverLSQ.cpp`):
+   - 原：`solve()` 末尾硬编码 `getSolution(Parameter::dX, …)`，当系统不含 dX/dY/dZ
+     （如测速）时抛出异常
+   - 改：新建 `solveGeneral()` 不提取位置参数，dX/dY/dZ 提取用 try-catch 包裹
+   - **错误纠正过程**：起初尝试在 `solveVelocity()` 中 catch 异常后继续 —— 但 SolverLSQ
+     的 state 已被正确计算，然而直接修改 `solve()` 风险较大，最终选择新建 `solveGeneral()`
+
+4. **测速公式符号错误** (`lib/SPPCode.cpp` `linearizeVelocity()`):
+   - 原：`prefit = -λ·D - cosines·Ẋ^s + c·δṫ_s`，Vx系数 = `-cosines[0]`
+   - 改：`prefit = -λ·D + cosines·Ẋ^s + c·δṫ_s`，Vx系数 = `cosines[0]`
+   - 原因：SPP 的 `cosines = (X_r - X^s)/ρ = -e_教科书`。教科书公式使用 `e = (X^s - X_r)/ρ`，
+     推导后 `l_rs = -λ·D + cosines·Ẋ^s + c·δṫ_s = cosines·Ẋ_r + c·δṫ_r`
+   - 修正前：Vx≈-208~-568 m/s（异常大），修正后：Vx~0.06 m/s（静态站合理）
+
+---
+
 ### 2026-06-04
 
 **今日任务完成情况**:

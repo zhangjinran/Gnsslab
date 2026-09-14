@@ -272,26 +272,106 @@ Xvt NavEphBDS::svXvt(const CommonTime &t) const {
 }
 
 Xvt NavEphBDS::svXvt(const CommonTime &t, const SatID& sat) const {
-    Xvt sv = svXvt(t);
-
-    // BDS-2 GEO 判断：系统为 C 且 PRN 1~5
-    if (sat.system == "C" && sat.id >= 1 && sat.id <= 5) {
-        const double GEO_ROT_ANGLE = -5.0 * DEG_TO_RAD;
-        double cos_ang = cos(GEO_ROT_ANGLE);
-        double sin_ang = sin(GEO_ROT_ANGLE);
-
-        // 旋转坐标
-        double y_rot = sv.x[1] * cos_ang - sv.x[2] * sin_ang;
-        double z_rot = sv.x[1] * sin_ang + sv.x[2] * cos_ang;
-        sv.x[1] = y_rot;
-        sv.x[2] = z_rot;
-
-        // 旋转速度
-        double vy_rot = sv.v[1] * cos_ang - sv.v[2] * sin_ang;
-        double vz_rot = sv.v[1] * sin_ang + sv.v[2] * cos_ang;
-        sv.v[1] = vy_rot;
-        sv.v[2] = vz_rot;
+    // BDS GEO: PRN 1-5 (BDS-2) 及 59-62 (BDS-3)
+    // 课本表 4-6：GEO 1-5, 59-62；MEO/IGSO 6-58
+    bool isGEO = (sat.id >= 1 && sat.id <= 5) || (sat.id >= 59 && sat.id <= 62);
+    if (!(sat.system == "C" && isGEO)) {
+        // 非 GEO：直接返回标准结果
+        return svXvt(t);
     }
+
+    // === BDS-2 GEO 特殊处理 ===
+    // 课本 4.2 节：GEO 卫星需要：
+    // 1. Ωk = Ω0 + Ω_dot·tk - ωe·toe  (不同于 MEO 的 Ω_dot-ωe)
+    // 2. [Xg,Yg,Zg] = RZ(ωe·tk) · RX(+5°) · [Xk,Yk,Zk]^T
+
+    Xvt sv = svXvt(t);  // 先用标准 Keplerian 计算
+    BDSEllipsoid ell;
+
+    // 获取 tk
+    double tk = t - ctToe;
+    if (tk > 302400) tk -= 604800;
+    if (tk < -302400) tk += 604800;
+
+    double omega_e = ell.angVelocity();
+
+    // 1. 用 GEO 公式重算 Ωk
+    double OMEGA_k_GEO = OMEGA_0 + OMEGA_DOT * tk - omega_e * Toe;
+    double sinOMG = sin(OMEGA_k_GEO);
+    double cosOMG = cos(OMEGA_k_GEO);
+
+    // 从 svXvt(t) 中提取轨道平面坐标 xip, yip, ik
+    // 但实际上 svXvt(t) 已经做了 ECEF 变换，我们需要反推
+    // 更可靠的方式：用 A, ecc, Ek, uk, ik 重算
+
+    // 重新获取中间量（与 svXvt(t) 一致）
+    double A = sqrt_A * sqrt_A;
+    double n0 = sqrt(ell.gm() / (A * A * A));
+    double n = n0 + Delta_n;
+    double Mk = M0 + n * tk;
+    double twoPI = 2.0 * PI;
+    Mk = fmod(Mk, twoPI);
+    double Ek = Mk + ecc * sin(Mk);
+    for (int i = 0; i < 20; i++) {
+        double F = Mk - (Ek - ecc * sin(Ek));
+        double G = 1.0 - ecc * cos(Ek);
+        double delea = F / G;
+        Ek += delea;
+        if (fabs(delea) < 1e-11) break;
+    }
+
+    double sinEk = sin(Ek), cosEk = cos(Ek);
+    double q = sqrt(1.0 - ecc * ecc);
+    double vk = atan2(q * sinEk, cosEk - ecc);
+
+    double phi_k = vk + omega;
+    double c2p = cos(2.0 * phi_k), s2p = sin(2.0 * phi_k);
+    double duk = c2p * Cuc + s2p * Cus;
+    double drk = c2p * Crc + s2p * Crs;
+    double dik = c2p * Cic + s2p * Cis;
+
+    double uk = phi_k + duk;
+    double rk = A * (1.0 - ecc * cosEk) + drk;
+    double ik = i0 + dik + IDOT * tk;
+
+    // 轨道平面坐标（与 MEO 相同）
+    double xip = rk * cos(uk);
+    double yip = rk * sin(uk);
+
+    // 用 GEO Ωk 计算 ECEF（中间坐标系）
+    double ci = cos(ik), si = sin(ik);
+    double Xk = xip * cosOMG - yip * ci * sinOMG;
+    double Yk = xip * sinOMG + yip * ci * cosOMG;
+    double Zk = yip * si;
+
+    // 2. RX(+5°) 旋转
+    double ang5 = 5.0 * DEG_TO_RAD;
+    double c5 = cos(ang5), s5 = sin(ang5);
+    double Y1 = Yk * c5 - Zk * s5;
+    double Z1 = Yk * s5 + Zk * c5;
+
+    // 3. RZ(ωe·tk) 地球自转改正
+    double theta = omega_e * tk;
+    double ct = cos(theta), st = sin(theta);
+    sv.x[0] = Xk * ct + Y1 * st;
+    sv.x[1] = -Xk * st + Y1 * ct;
+    sv.x[2] = Z1;
+
+    // === 速度处理（简版：RX + RZ 旋转已有速度）===
+    // 对于 GEO，速度很小（相对地面静止），RX+RT 旋转已足够
+    // 从 svXvt(t) 取原始速度进行旋转
+    double vx0 = sv.v[0], vy0 = sv.v[1], vz0 = sv.v[2];
+
+    // RX(+5°)
+    double vy1 = vy0 * c5 - vz0 * s5;
+    double vz1 = vy0 * s5 + vz0 * c5;
+
+    // RZ(ωe·tk) + RZ_dot(ωe·tk) 项
+    // 完整的 GEO 速度 = RZ·RX·V + RZ_dot·RX·X
+    // 其中 RZ_dot = ωe * [-sin(θ), -cos(θ), 0; cos(θ), -sin(θ), 0; 0, 0, 0]
+    sv.v[0] = vx0 * ct + vy1 * st + omega_e * (-Xk * st + Y1 * ct);
+    sv.v[1] = -vx0 * st + vy1 * ct + omega_e * (-Xk * ct - Y1 * st);
+    sv.v[2] = vz1;
 
     return sv;
 }

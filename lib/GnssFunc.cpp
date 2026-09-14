@@ -916,11 +916,25 @@ std::map<SatID, double> ionoDelay(Vector3d& xyz,
             continue;  // 跳过后面的乘以光速操作
             
         } else {
-            // GPS/QZSS/IRNSS/GLONASS: 使用Klobuchar模型，直接取第一个参数
-            auto temp = navStore.ionoCorrData.begin();
-            double alpha[4] = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
-            temp++;
-            double beta[4]  = { temp->second[0], temp->second[1], temp->second[2], temp->second[3] };
+            // GPS/QZSS/IRNSS/GLONASS: 按系统查找对应的 Klobuchar 参数
+            string alphaKey, betaKey;
+            if (sys == "J") {
+                alphaKey = "QZSA"; betaKey = "QZSB";
+            } else {
+                alphaKey = "GPSA"; betaKey = "GPSB";  // G/R/I 共用 GPS 参数
+            }
+
+            double alpha[4] = {0}, beta[4] = {0};
+            auto itA = navStore.ionoCorrData.find(alphaKey);
+            if (itA != navStore.ionoCorrData.end())
+                for (int i = 0; i < 4 && i < (int)itA->second.size(); i++)
+                    alpha[i] = itA->second[i];
+
+            auto itB = navStore.ionoCorrData.find(betaKey);
+            if (itB != navStore.ionoCorrData.end())
+                for (int i = 0; i < 4 && i < (int)itB->second.size(); i++)
+                    beta[i] = itB->second[i];
+
             ionodelay = klobucharIonosphericCorrection(xyz, satElevData[sat], satAzimData[sat], alpha, beta, ws->getSOW(), sat, freq);
         }
         
@@ -993,8 +1007,8 @@ double klobucharIonosphericCorrection(Vector3d xyz,
     double lonIPP = lonUser + (sin(psi) * sin(A)) / cos(latIPP);
 
     // 地磁纬度
-    const double phiP = 79.5 * PI/180.0;   // slightly north shift
-    const double lamP = 288.0 * PI/180.0;  // slight west shift
+    const double phiP = 78.3 * PI/180.0;   // 地磁北极纬度（课本/ICD 标准值）
+    const double lamP = 291.0 * PI/180.0;  // 地磁北极经度（课本/ICD 标准值）
     double latMag = asin(sin(latIPP) * sin(phiP) + cos(latIPP) * cos(phiP) * cos(lonIPP - lamP));
     double latMagDeg = latMag * 180.0 / PI;
 
@@ -1292,8 +1306,8 @@ double saastamoinenTroposphericCorrection(
     double T_c = 15.0 - 0.0065 * H_m;
     double T_k = T_c + 273.15;
 
-    // 水汽压（Tetens）
-    double es = 6.1078 * exp(17.27 * T_c / (T_c + 237.3));
+    // 水汽压（Tetens，课本公式 5.58，T 为开尔文温度）
+    double es = 6.108 * exp((17.15 * T_k - 4684.0) / (T_k - 38.45));
     double e  = RH * es;
 
     // ==============================

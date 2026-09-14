@@ -35,7 +35,7 @@ std::map<std::string, std::string> sysNameMap = {
 std::map<string, std::set<string>>  sysTypes = {
 
     {"G", {"C1C"}},   // GPS L1 C/A
-    {"C", {"C1X"}},   // BDS-2 B1I（或 C1I，取决版本）
+    {"C", {"C2I"}},   // BDS-2 B1I（或 C1I，取决版本）
     {"E", {"C1X"}},   // Galileo E1
     {"R", {"C1C"}},   // GLONASS L1
     {"J", {"C1C"}},   // QZSS L1

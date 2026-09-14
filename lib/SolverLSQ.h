@@ -32,11 +32,14 @@ public:
     SolverLSQ() {};
     Vector3d getxyz() const;
     virtual void solve(EquSys &equSys);
+    virtual void solveGeneral(EquSys &equSys);
     int getIndex(const VariableSet &varSet, const Variable &thisVar);
     double getSolution(const Parameter &type,
                        VariableSet &currentUnkSet,
                        const VectorXd &stateVec);
     Eigen::VectorXd getResiduals() const;
+
+    Eigen::VectorXd getState() const { return state; }
 
     void setxyz(const Vector3d &xyz) ;
     MatrixXd getcov_r();

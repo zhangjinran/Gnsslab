@@ -54,6 +54,34 @@ struct SPPResult {
     std::map<SatID, double> satRelativityData;  // 各卫星的相对论效应改正值（单位：米）
 };
 
+// 单点测速结果结构体
+struct SPPVelocityResult {
+    Eigen::Vector3d vel;    // 接收机速度 (m/s), ECEF
+    double cdt_dot;          // 接收机钟漂 × C (m/s)
+    double vdop;             // 速度精度因子
+    int nSat;                // 参与测速的卫星数
+};
+
+// 历元跳过统计结构体
+struct EpochSkipStats {
+    int totalEpochs = 0;
+    int svNumException = 0;     // 卫星数不足
+    int sigma0Zero = 0;         // sigma0 == 0
+    int pdopInvalid = 0;        // PDOP 无效（NaN/∞/负）
+    int pdopExceed = 0;         // PDOP > 10
+    int iterNotConverge = 0;    // 迭代 > 10 次未收敛
+    int sigma0Exceed = 0;       // sigma0 > 10.0
+    int satNoCodeType = 0;      // 无匹配观测类型
+    int satNoObsValue = 0;      // 观测值不存在
+    int satEphFailed = 0;       // 星历计算失败
+    int satOutlierDeleted = 0;  // 粗差剔除
+
+    int totalSkipped() const {
+        return svNumException + sigma0Zero + pdopInvalid +
+               pdopExceed + iterNotConverge + sigma0Exceed;
+    }
+};
+
 class SPPCode {
 public:
     SPPCode()
@@ -102,6 +130,24 @@ public:
         earthRotationEnable = enable;
     }
 
+    void setSysTypes(const std::map<std::string, std::set<std::string>>& types_)
+    {
+        sysTypes = types_;
+    }
+
+    // 历元跳过统计
+    void resetEpochSkipStats()
+    {
+        epochSkipStats = EpochSkipStats{};
+    }
+
+    static void printEpochSkipStats(const EpochSkipStats& stats);
+
+    const EpochSkipStats& getEpochSkipStats() const { return epochSkipStats; }
+
+
+    void clearOutlierSats() { outlierSats.clear(); }
+    const std::set<SatID>& getOutlierSats() const { return outlierSats; }
 
     void solve(ObsData &obsData,bool TGD_bool=false,bool Trop_Bool=true,bool Iono_Bool=true);
 
@@ -111,6 +157,9 @@ public:
 
     bool strangeDataDelete(ObsData &obsData,double parameter=3.0);
 
+    EquSys linearizeVelocity(ObsData &obsData, VariableSet &varSet, int &nSat);
+
+    SPPVelocityResult solveVelocity(ObsData &obsData);
 
 
     Xvt computeAtTransmitTime(const CommonTime& tr,
@@ -137,6 +186,7 @@ public:
     
     // BDS卫星类型处理
     std::string getBDSSatType(const SatID& sat,CommonTime epoch);
+
     double getTypeWeight(const SatID& sat,CommonTime epoch);
 
     EquSys getEquSys()
@@ -212,6 +262,12 @@ protected:
     RinexNavStore* pEphStore;
 
     SatID datumSat;
+
+    // 历元跳过统计实例
+    EpochSkipStats epochSkipStats;
+
+    // 粗差卫星降权集合（不删除，仅降权）
+    std::set<SatID> outlierSats;
 
 };
 

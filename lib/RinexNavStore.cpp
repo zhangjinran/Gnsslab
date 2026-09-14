@@ -1088,10 +1088,12 @@ NavEphGalileo RinexNavStore::findGalileoEph(const SatID &sat, const CommonTime &
         throw e;
     } else if (ageHours > 1.0) {
         CivilTime civil = CommonTime2CivilTime(epoch);
-        cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat 
-             << " (age: " << ageHours << "h)"
-             << " Epoch: " << civil
-             << endl;
+        if (debug) {
+            cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat
+                 << " (age: " << ageHours << "h)"
+                 << " Epoch: " << civil
+                 << endl;
+        }
     }
 
     return galEph_best;
@@ -1169,10 +1171,12 @@ NavEphGLONASS RinexNavStore::findGLOEph(const SatID& sat,
         throw e;
     } else if (ageHours > 1.0) {
         CivilTime civil = CommonTime2CivilTime(epoch);
-        cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat 
-             << " (age: " << ageHours << "h)"
-             << " Epoch: " << civil
-             << endl;
+        if (debug) {
+            cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat
+                 << " (age: " << ageHours << "h)"
+                 << " Epoch: " << civil
+                 << endl;
+        }
     }
 
     return gloEph_best;
@@ -1516,10 +1520,12 @@ NavEphGPS RinexNavStore::findGPSEph(const SatID &sat, const CommonTime &epoch) {
         throw e;
     } else if (ageHours > 1.0) {
         CivilTime civil = CommonTime2CivilTime(epoch);
-        cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat 
-             << " (age: " << ageHours << "h)"
-             << " Epoch: " << civil
-             << endl;
+        if (debug) {
+            cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat
+                 << " (age: " << ageHours << "h)"
+                 << " Epoch: " << civil
+                 << endl;
+        }
     }
 
     return gpsEph_best;
@@ -1564,10 +1570,12 @@ NavEphBDS RinexNavStore::findBDSEph(const SatID &sat, const CommonTime &epoch) {
         throw e;
     } else if (ageHours > 1.0) {
         CivilTime civil = CommonTime2CivilTime(epoch);
-        cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat 
-             << " (age: " << ageHours << "h)"
-             << " Epoch: " << civil
-             << endl;
+        if (debug) {
+            cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat
+                 << " (age: " << ageHours << "h)"
+                 << " Epoch: " << civil
+                 << endl;
+        }
     }
 
     return bdsEph_best;
@@ -1617,10 +1625,12 @@ NavEphQZSS RinexNavStore::findQZSSEph(
         throw e;
     } else if (ageHours > 1.0) {
         CivilTime civil = CommonTime2CivilTime(epoch);
-        cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat 
-             << " (age: " << ageHours << "h)"
-             << " Epoch: " << civil
-             << endl;
+        if (debug) {
+            cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat
+                 << " (age: " << ageHours << "h)"
+                 << " Epoch: " << civil
+                 << endl;
+        }
     }
 
     return bestEph;
@@ -1669,10 +1679,12 @@ NavEphIRNSS RinexNavStore::findIRNSSEph(
         throw e;
     } else if (ageHours > 1.0) {
         CivilTime civil = CommonTime2CivilTime(epoch);
-        cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat 
-             << " (age: " << ageHours << "h)"
-             << " Epoch: " << civil
-             << endl;
+        if (debug) {
+            cout << "[WARNING] Ephemeris age >1 hour for satellite " << sat
+                 << " (age: " << ageHours << "h)"
+                 << " Epoch: " << civil
+                 << endl;
+        }
     }
 
     return bestEph;

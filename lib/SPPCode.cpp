@@ -30,6 +30,7 @@
 #define debug 0
 
 void SPPCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool,bool Iono_Bool) {
+    outlierSats.clear();
     if(debug) {
         cout << "\n" << string(70, '=') << endl;
         cout << "=== SPPCode::solve() - SPP单点定位求解 ===" << endl;
@@ -108,6 +109,7 @@ void SPPCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool,bool Iono_Bool
         int numSats = obsData.satTypeValueData.size();
 
         if (numSats < 5) {
+            epochSkipStats.svNumException++;
             SVNumException e("num of satellites is less than 4");
             throw(e);
         }
@@ -172,10 +174,6 @@ void SPPCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool,bool Iono_Bool
         MatrixXd covMatrix = solverLsq.getCovMatrix();
         if (covMatrix.rows() >= 3) {
             double sigma0 = solverLsq.getSigma0();
-            if (sigma0 == 0.0) {
-                SVNumException e("sigma0 is zero");
-                throw(e);
-            }
             if (sigma0 > 0) {
                 double varX = covMatrix(0, 0) * sigma0 * sigma0;
                 double varY = covMatrix(1, 1) * sigma0 * sigma0;
@@ -195,21 +193,20 @@ void SPPCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool,bool Iono_Bool
             cout<<"epoch: "<<epoch<<endl;
         // 检查 PDOP 是否为异常值（NaN、无穷大、负数）
         if (std::isnan(pdop) || std::isinf(pdop) || pdop < 0) {
+            epochSkipStats.pdopInvalid++;
             if (debug) {
                 cout << "\n【PDOP异常】PDOP = " << pdop << "，跳过该历元" << endl;
             }
             throw std::runtime_error("PDOP is invalid");
         }
         
-        // 检查 PDOP 是否超限
         if (pdop > 10.0) {
+            epochSkipStats.pdopExceed++;
             if (debug) {
                 cout << "\n【PDOP超限】PDOP = " << fixed << setprecision(2) << pdop << " > 10.0，跳过该历元" << endl;
             }
             throw std::runtime_error("PDOP exceeds threshold");
         }
-
-
 
         xyz += dxyz;
         if (debug) {
@@ -226,12 +223,14 @@ void SPPCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool,bool Iono_Bool
         double sigma0 = solverLsq.getSigma0();
         double rejectThreshold = 0;
         if (sigma0 < 3) {
+            rejectThreshold = 4;
             // sigma0 < 3，不需要粗差探测
         } else {
-            rejectThreshold = 5;
+            rejectThreshold = 2.5;
         }
 
         if ( strangeDataDelete(obsData, rejectThreshold)) {
+            epochSkipStats.satOutlierDeleted++;
             if(debug) cout << "\n【粗差剔除】发现异常数据，重新初始化迭代 (sigma0=" << sigma0 << ", threshold=" << rejectThreshold << ")" << endl;
             iter = 0;
             xyz = obsData.antennaPosition;
@@ -245,6 +244,7 @@ void SPPCode::solve(ObsData &obsData,bool TGD_bool,bool Trop_Bool,bool Iono_Bool
         }
 
         if (iter > 10) {
+            epochSkipStats.iterNotConverge++;
             InvalidSolver e("too many iterations");
             throw(e);
         }
@@ -289,6 +289,7 @@ std::map<SatID, Xvt> SPPCode::computeSatPos(ObsData &obsData) {
             codeType = *sysIt->second.begin();
         }
         else {
+            epochSkipStats.satNoCodeType++;
             satRejectedSet.insert(sat);
             continue;
         }
@@ -302,6 +303,7 @@ std::map<SatID, Xvt> SPPCode::computeSatPos(ObsData &obsData) {
             }
         }
         catch (...) {
+            epochSkipStats.satNoObsValue++;
             satRejectedSet.insert(sat);
             continue;
         }
@@ -311,6 +313,7 @@ std::map<SatID, Xvt> SPPCode::computeSatPos(ObsData &obsData) {
             xvt = computeAtTransmitTime(time, obs, sat);
         }
         catch (InvalidRequest &e) {
+            epochSkipStats.satEphFailed++;
             satRejectedSet.insert(sat);
             continue;
         }
@@ -636,6 +639,11 @@ EquSys SPPCode::linearize(Eigen::Vector3d& xyz,
                 // 最终权重 = 仰角权重 * 类型权重
                 double weight = w_elev * w_type;
 
+                // 粗差降权（不删星，仅设极小的权）
+                if (outlierSats.find(sat) != outlierSats.end()) {
+                    weight = 1e-10;
+                }
+
                 equSysTemp.obsEquData[equID].weight = weight;
 
                 // 把当前观测方程未知参数插入到总体的未知参数
@@ -691,19 +699,30 @@ void SPPCode::correctTGD( ObsData &obsdata) {
         }
         else if (tv.first.system == "C")
         {
+            NavEphBDS nav_eph_bds = pEphStore->findBDSEph(tv.first, epoch);
             for (auto &st: tv.second) {
                 double Delta_TGD(0.0);
                 if (st.first == "C1") {
-                    // BDS C1 码（B1C）不需要 TGD 改正，改正量为 0
-                    satTGDData[tv.first] = Delta_TGD;  // 存储 TGD 改正值（0）
+                    // BDS C1（B1C）相对于 B3I 的 TGD 需要查 ICD
+                    // 当前暂改为 0，后续如有 B1C TGD 参数再补充
+                    satTGDData[tv.first] = 0.0;
                     if(debug) {
                         cout << "  卫星: " << tv.first 
-                             << "  改正量: " << fixed << setprecision(3) << Delta_TGD << " m (BDS C1不需要TGD改正)" << endl;
+                             << "  改正量: " << fixed << setprecision(3) << Delta_TGD << " m (BDS C1)" << endl;
                     }
-                    break;
+                }
+                else if (st.first == "C2") {
+                    // BDS C2（B1I = C2I）：δt_B1 = δt_B3 - TGD1
+                    Delta_TGD = -C_MPS * nav_eph_bds.TGD1;
+                    st.second += Delta_TGD;
+                    satTGDData[tv.first] = Delta_TGD;
+                    if(debug) {
+                        cout << "  卫星: " << tv.first 
+                             << "  TGD1: " << scientific << setprecision(6) << nav_eph_bds.TGD1 << " s"
+                             << "  改正量: " << fixed << setprecision(3) << Delta_TGD << " m (BDS C2)" << endl;
+                    }
                 }
             }
-
         }
         else if (tv.first.system == "E")
         {
@@ -737,6 +756,145 @@ std::map<SatID,double> SPPCode::computeTropDelay(ObsData &obsdata,std::map<SatID
     Vector3d xyz=obsdata.antennaPosition;
     std::map<SatID,double>tropDelayMap= tropDelay(xyz,satElevData);
     return tropDelayMap;
+}
+
+
+EquSys SPPCode::linearizeVelocity(ObsData &obsData, VariableSet &varSet, int &nSat) {
+    EquSys velEquSys;
+    velEquSys.station = obsData.station;
+    nSat = 0;
+
+    if (debug) {
+        cout << "\n" << string(70, '=') << endl;
+        cout << "=== SPPCode::linearizeVelocity() ===" << endl;
+        cout << "历元: " << CommonTime2CivilTime(obsData.epoch) << endl;
+        cout << string(70, '-') << endl;
+    }
+
+    const string DOPPLER_PREFIX = "D";
+
+    for (auto &stv : obsData.satTypeValueData) {
+        SatID sat = stv.first;
+        double elev = satElevData.at(sat);
+        if (elev < cutOffElev) continue;
+        double elevRad = elev * DEG_TO_RAD;
+
+        XYZ satXYZ = satXvtRecTime[sat].x;
+        double rho = (satXYZ - xyz).norm();
+
+        Eigen::Vector3d e;
+        e[0] = (xyz.x() - satXYZ[0]) / rho;
+        e[1] = (xyz.y() - satXYZ[1]) / rho;
+        e[2] = (xyz.z() - satXYZ[2]) / rho;
+
+        Eigen::Vector3d satVel = satXvtRecTime[sat].v;
+        double satClkDrift = satXvtRecTime[sat].clkdrift;
+
+        for (auto &tv : stv.second) {
+            string obsType = tv.first;
+            if (obsType.size() < 2 || obsType[0] != DOPPLER_PREFIX[0]) continue;
+
+            int freqNum = 0;
+            try { freqNum = stoi(obsType.substr(1, 1)); }
+            catch (...) { continue; }
+
+            // GLONASS 频率依赖卫星频道号，需从星历获取
+            double wavelength;
+            if (sat.system == "R" && pEphStore != nullptr) {
+                try {
+                    NavEphGLONASS gloEph = pEphStore->findGLOEph(sat, obsData.epoch);
+                    string freqType = "C" + to_string(freqNum);
+                    double freq = gloEph.getFreq(freqType);
+                    wavelength = C_MPS / freq;
+                } catch (...) {
+                    wavelength = getWavelength(sat.system, freqNum);
+                }
+            } else {
+                wavelength = getWavelength(sat.system, freqNum);
+            }
+            if (wavelength == 0.0) continue;
+
+            double dopplerHz = tv.second;
+            double rangeRate = -wavelength * dopplerHz;
+            // l_rs = -λ·D + cosines·Ẋ^s + c·δṫ_s
+            // 其中 cosines = (X_r - X^s)/ρ = -e_教科书
+            double prefit = rangeRate + e.dot(satVel) + C_MPS * satClkDrift;
+
+            if (debug) {
+                cout << "  " << sat << " D" << freqNum
+                     << "  λ=" << scientific << setprecision(6) << wavelength
+                     << " λ·D=" << fixed << setprecision(1) << -rangeRate
+                     << " l_rs=" << setprecision(3) << prefit << " m/s"
+                     << endl;
+            }
+
+            EquID equID(sat, obsType);
+            velEquSys.obsEquData[equID].prefit = prefit;
+            velEquSys.obsEquData[equID].varCoeffData[Variable(obsData.station, Parameter::dVx)]     = e[0];
+            velEquSys.obsEquData[equID].varCoeffData[Variable(obsData.station, Parameter::dVy)]     = e[1];
+            velEquSys.obsEquData[equID].varCoeffData[Variable(obsData.station, Parameter::dVz)]     = e[2];
+            velEquSys.obsEquData[equID].varCoeffData[Variable(obsData.station, Parameter::cdt_dot)] =  1.0;
+
+            double w = 1.0 / (sigCode * sigCode);
+            if (elev < 30) w *= pow(sin(elevRad), 2);
+            velEquSys.obsEquData[equID].weight = w;
+
+            varSet.insert(Variable(obsData.station, Parameter::dVx));
+            varSet.insert(Variable(obsData.station, Parameter::dVy));
+            varSet.insert(Variable(obsData.station, Parameter::dVz));
+            varSet.insert(Variable(obsData.station, Parameter::cdt_dot));
+            velEquSys.satList.push_back(sat);
+            nSat++;
+            break;
+        }
+    }
+
+    velEquSys.varSet = varSet;
+    return velEquSys;
+}
+
+
+SPPVelocityResult SPPCode::solveVelocity(ObsData &obsData) {
+    SPPVelocityResult result;
+    result.vel = Vector3d(0, 0, 0);
+    result.cdt_dot = 0;
+    result.vdop = 0;
+    result.nSat = 0;
+
+    VariableSet varSet;
+    EquSys velEquSys = linearizeVelocity(obsData, varSet, result.nSat);
+
+    if (result.nSat < 4) {
+        if (debug) cout << "[solveVelocity] Doppler卫星数不足: " << result.nSat << " < 4" << endl;
+        return result;
+    }
+
+    SolverLSQ velSolver;
+    velSolver.solveGeneral(velEquSys);
+
+    result.vel[0] = velSolver.getSolution(Parameter::dVx, varSet, velSolver.getState());
+    result.vel[1] = velSolver.getSolution(Parameter::dVy, varSet, velSolver.getState());
+    result.vel[2] = velSolver.getSolution(Parameter::dVz, varSet, velSolver.getState());
+    result.cdt_dot = velSolver.getSolution(Parameter::cdt_dot, varSet, velSolver.getState());
+
+    MatrixXd cov = velSolver.getCovMatrix();
+    if (cov.rows() >= 3) {
+        double sigma0 = velSolver.getSigma0();
+        if (sigma0 > 0) {
+            result.vdop = sqrt(cov(0,0)*sigma0*sigma0 + cov(1,1)*sigma0*sigma0
+                             + cov(2,2)*sigma0*sigma0) / sigma0;
+        }
+    }
+
+    if (debug) {
+        cout << "Vx=" << fixed << setprecision(3) << result.vel[0]
+             << " Vy=" << result.vel[1] << " Vz=" << result.vel[2]
+             << " cdt_dot=" << result.cdt_dot
+             << " VDOP=" << setprecision(2) << result.vdop
+             << " nSat=" << result.nSat << endl;
+    }
+
+    return result;
 }
 
 
@@ -776,20 +934,20 @@ std::vector<SPPResult> SPPCode::full_solve(RinexNavStore* pStore, string roverFi
         CommonTime epoch = roverData.epoch;
         SatTypeValueMap keep_data;
         
-        // 根据 sysCode 筛选卫星
+        // 根据 sysCode / sysTypes 筛选卫星
         if (sysCode.empty()) {
-            // 默认模式：处理 GPS 和 BDS
+            // 多系统模式：遍历 sysTypes 中的所有系统
             for (auto &st: roverData.satTypeValueData) {
-                if (st.first.system == "C") {
-                    if (pEphStore->bdsEphData.find(st.first)!=pEphStore->bdsEphData.end() ) {
-                        keep_data.insert(st);
-                    }
-                }
-                if (st.first.system == "G") {
-                    if (pEphStore->gpsEphData.find(st.first)!=pEphStore->gpsEphData.end() ) {
-                        keep_data.insert(st);
-                    }
-                }
+                string sys = st.first.system;
+                if (sysTypes.find(sys) == sysTypes.end()) continue;
+                bool hasEph = false;
+                if (sys == "G") hasEph = pEphStore->gpsEphData.find(st.first) != pEphStore->gpsEphData.end();
+                else if (sys == "C") hasEph = pEphStore->bdsEphData.find(st.first) != pEphStore->bdsEphData.end();
+                else if (sys == "E") hasEph = pEphStore->galEphData.find(st.first) != pEphStore->galEphData.end();
+                else if (sys == "R") hasEph = pEphStore->gloEphData.find(st.first) != pEphStore->gloEphData.end();
+                else if (sys == "J") hasEph = pEphStore->qzssEphData.find(st.first) != pEphStore->qzssEphData.end();
+                else if (sys == "I") hasEph = pEphStore->irnssEphData.find(st.first) != pEphStore->irnssEphData.end();
+                if (hasEph) keep_data.insert(st);
             }
         } else {
             // 单系统模式：只处理指定系统
@@ -847,12 +1005,28 @@ std::vector<SPPResult> SPPCode::full_solve(RinexNavStore* pStore, string roverFi
         // 计算残差统计
         VectorXd residuals = solverLsq.getResiduals();
         double sigma0_val = solverLsq.getSigma0();
-        if (sigma0_val > 10.0) {
+        if (sigma0_val > 5.0) {
+            epochSkipStats.sigma0Exceed++;
             continue;
         }
         double meanResidual = residuals.mean();
         double rmsResidual = sqrt(residuals.squaredNorm() / residuals.size());
         double maxResidual = residuals.cwiseAbs().maxCoeff();
+        // 调试：BDS 第一历元，残差 > 100 时打印详情
+        if (maxResidual > 100 && sysCode.empty()) {
+            for (auto &st : roverData.satTypeValueData) {
+                if (st.first.system == "C") {
+                    cerr << "[BDS RES] epoch=" << CommonTime2YDSTime(epoch)
+                         << " sat=" << st.first
+                         << " res=" << residuals.transpose()
+                         << " sigma0=" << sigma0_val
+                         << " nSat=" << nSat
+                         << " prefit=" << st.second  // can't access prefit here
+                         << endl;
+                    break;
+                }
+            }
+        }
         if (maxResidual > 100&&debug) {
             cout<<"epoch"<<epoch<<endl;
             cout<<"max_residual"<<maxResidual<<endl;
@@ -928,9 +1102,12 @@ std::vector<SPPResult> SPPCode::full_solve(RinexNavStore* pStore, string roverFi
         CommonTime stopEpoch = CivilTime2CommonTime(stopCivilTime);
     }
 
+    epochSkipStats.totalEpochs = results.size() + epochSkipStats.totalSkipped();
+
     roverObsStream.close();
     return results;
 }
+
 // BDS卫星类型判断（基于轨道参数）
 std::string SPPCode::getBDSSatType(const SatID& sat, CommonTime epoch)
 {
@@ -1045,7 +1222,7 @@ bool SPPCode::strangeDataDelete(ObsData &obsData, double parameter) {
     VectorXd residuals = solverLsq.getResiduals();
     double sigma0 = solverLsq.getSigma0();
     double adaptiveThreshold = parameter * sigma0;
-    double fixedThreshold = 100.0;
+    double fixedThreshold = 10.0;
 
     if(debug) {
         cout << "\n【粗差探测】" << endl;
@@ -1093,7 +1270,20 @@ bool SPPCode::strangeDataDelete(ObsData &obsData, double parameter) {
             cout << endl;
         }
 
-        obsData.satTypeValueData.erase(badSat);
+        // 超大残差（>100m）：直接删星，不降权
+        if (maxv > 100.0) {
+            obsData.satTypeValueData.erase(badSat);
+            if (debug) cout << "  超大残差，直接删星: " << badSat << " (" << maxv << "m)" << endl;
+            return true;
+        }
+
+        // 中等残差：加入降权集合，不删星
+        if (outlierSats.find(badSat) != outlierSats.end()) {
+            if (debug) cout << "  卫星已在降权集合，跳过" << endl;
+            return false;
+        }
+        outlierSats.insert(badSat);
+        if (debug) cout << "  加入降权集合: " << badSat << endl;
         return true;
     } else {
         if(debug) {
@@ -1101,4 +1291,35 @@ bool SPPCode::strangeDataDelete(ObsData &obsData, double parameter) {
         }
         return false;
     }
+}
+
+void SPPCode::printEpochSkipStats(const EpochSkipStats& stats) {
+    int totalSkipped = stats.totalSkipped();
+    int totalEpochs = stats.totalEpochs;
+
+    cout << "\n========================================" << endl;
+    cout << " 历元跳过统计 (Epoch Skip Statistics)" << endl;
+    cout << "========================================" << endl;
+    cout << " 总历元数                    : " << totalEpochs << endl;
+    cout << "----------------------------------------" << endl;
+    cout << " --- 历元级跳过（整个历元丢弃）---" << endl;
+    cout << " 卫星数不足 (SVNumException) : " << stats.svNumException << endl;
+    cout << " Sigma0 == 0                 : " << stats.sigma0Zero << endl;
+    cout << " PDOP 无效 (NaN/∞/负)       : " << stats.pdopInvalid << endl;
+    cout << " PDOP > 5                  : " << stats.pdopExceed << endl;
+    cout << " 迭代不收敛 (>10次)          : " << stats.iterNotConverge << endl;
+    cout << " Sigma0 > 10.0               : " << stats.sigma0Exceed << endl;
+    cout << "----------------------------------------" << endl;
+    cout << " 小计                        : " << totalSkipped;
+    if (totalEpochs > 0) {
+        cout << " / " << totalEpochs << " (" << (100.0 * totalSkipped / totalEpochs) << "%)";
+    }
+    cout << endl;
+    cout << "----------------------------------------" << endl;
+    cout << " --- 卫星级剔除（颗数）---" << endl;
+    cout << " 无匹配观测类型              : " << stats.satNoCodeType << endl;
+    cout << " 观测值不存在                : " << stats.satNoObsValue << endl;
+    cout << " 星历计算失败                : " << stats.satEphFailed << endl;
+    cout << " 粗差剔除 (strangeDataDelete): " << stats.satOutlierDeleted << endl;
+    cout << "========================================\n" << endl;
 }

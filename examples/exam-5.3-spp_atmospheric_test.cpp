@@ -34,7 +34,7 @@ std::map<std::string, std::string> sysNameMap = {
 };
 
 // 运行单个系统的 SPP 测试
-void runSingleSystemSPP(const string& system, 
+EpochSkipStats runSingleSystemSPP(const string& system, 
                         const string& roverFile, 
                         const string& navFile,
                         const string& outputPath,
@@ -47,7 +47,7 @@ void runSingleSystemSPP(const string& system,
     auto it = sysNameMap.find(system);
     if (it == sysNameMap.end()) {
         std::cerr << "Unknown system: " << system << std::endl;
-        return;
+        return EpochSkipStats{};
     }
     std::string sysCode = it->second;
     
@@ -74,7 +74,7 @@ void runSingleSystemSPP(const string& system,
         RinexNavStore& newStore = navStoreMap[navFile];
         if (!newStore.loadFile(const_cast<string&>(navFile))) {
             std::cerr << "Error loading nav file for " << system << std::endl;
-            return;
+            return EpochSkipStats{};
         }
         pNavStore = &newStore;
     } else {
@@ -92,7 +92,7 @@ void runSingleSystemSPP(const string& system,
     std::fstream solStream(solFile, ios::out);
     if (!solStream) {
         std::cerr << "Error opening output file: " << solFile << std::endl;
-        return;
+        return EpochSkipStats{};
     }
     
     // 文件头
@@ -114,9 +114,14 @@ void runSingleSystemSPP(const string& system,
     
     solStream.close();
     std::cout << system << " " << atmosFlag << " -> " << solFile << std::endl;
+
+    return spp.getEpochSkipStats();
 }
 
 int main() {
+    // 历元跳过统计报告收集
+    struct Report { string system; string mode; EpochSkipStats stats; };
+    vector<Report> reports;
     std::cout << "=== SPP Atmospheric Correction Test ===" << std::endl;
     
     // 文件路径配置
@@ -162,33 +167,51 @@ int main() {
     //     runSingleSystemSPP("IRNSS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
     // }
 
+    // 辅助 lambda：生成模式标识
+    auto getFlag = [](bool iono, bool trop) -> string {
+        if (!iono && !trop) return "no_atmos";
+        if (iono && !trop) return "iono_only";
+        if (!iono && trop) return "trop_only";
+        return "full_atmos";
+    };
+
     // BDS 单系统测试
     std::cout << "\n=== BDS Single System Tests ===" << std::endl;
     for (const auto& mode : testModes) {
-        runSingleSystemSPP("BDS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        auto stats = runSingleSystemSPP("BDS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        reports.push_back({"BDS", getFlag(mode.first, mode.second), stats});
     }
 
-     // Galileo 单系统测试
+      // Galileo 单系统测试
     std::cout << "\n=== Galileo Single System Tests ===" << std::endl;
     for (const auto& mode : testModes) {
-        runSingleSystemSPP("Galileo", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        auto stats = runSingleSystemSPP("Galileo", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        reports.push_back({"Galileo", getFlag(mode.first, mode.second), stats});
     }
-    //
+
     // GPS 单系统测试
     std::cout << "\n=== GPS Single System Tests ===" << std::endl;
     for (const auto& mode : testModes) {
-        runSingleSystemSPP("GPS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        auto stats = runSingleSystemSPP("GPS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        reports.push_back({"GPS", getFlag(mode.first, mode.second), stats});
     }
-    //
+
     // GLONASS 单系统测试
     std::cout << "\n=== GLONASS Single System Tests ===" << std::endl;
     for (const auto& mode : testModes) {
-        runSingleSystemSPP("GLONASS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        auto stats = runSingleSystemSPP("GLONASS", roverFile, navFile, outputPath, mode.first, mode.second,sysTypes);
+        reports.push_back({"GLONASS", getFlag(mode.first, mode.second), stats});
     }
+    // //
     //
 
 
 
+    // ★ 末尾统一打印所有历元跳过统计
+    for (const auto& r : reports) {
+        cout << "\n========= " << r.system << " " << r.mode << " =========";
+        SPPCode::printEpochSkipStats(r.stats);
+    }
 
     std::cout << "\n=== All SPP tests completed ===" << std::endl;
     std::cout << "Results saved to: " << outputPath << std::endl;

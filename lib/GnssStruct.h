@@ -361,7 +361,9 @@ throw() {
 class Parameter {
 public:
     enum ParameterName { // 显式指定底层类型为int
-        Unknown = 0, dX, dY, dZ, cdt, cdt_BDS, cdt_GAL, cdt_GLO, cdt_QZS, cdt_IRN,ifb, iono, ambiguity, bias,count
+        Unknown = 0, dX, dY, dZ, cdt, cdt_BDS, cdt_GAL, cdt_GLO, cdt_QZS, cdt_IRN,
+        dVx, dVy, dVz, cdt_dot,
+        ifb, iono, ambiguity, bias,count
     };
 
     Parameter() {}
@@ -592,6 +594,9 @@ struct Result
     double pdop, gdop;
     int numSats;
     double ratio;
+    double sigma0 = 0.0;
+    double meanResidual = 0.0;
+    double maxResidual = 0.0;
 };
 
 typedef map<CommonTime,Eigen::Vector3d> TimeSequence;

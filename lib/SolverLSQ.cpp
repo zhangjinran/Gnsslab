@@ -170,8 +170,48 @@ void SolverLSQ::solve(EquSys &equSys) {
     }
     catch (...) {}
 
+}
 
+void SolverLSQ::solveGeneral(EquSys &equSys) {
+    // 与 solve() 相同，但不提取 dX/dY/dZ（适用于速度等非常规参数）
+    currentUnkSet = equSys.varSet;
+    int numUnk = currentUnkSet.size();
+    int numObs = equSys.obsEquData.size();
 
+    VectorXd prefit = VectorXd::Zero(numObs);
+    MatrixXd hMatrix = MatrixXd::Zero(numObs, numUnk);
+    MatrixXd wMatrix = MatrixXd::Zero(numObs, numObs);
+
+    int iobs(0);
+    for (auto ed: equSys.obsEquData) {
+        prefit(iobs) = ed.second.prefit;
+        for (auto vc: ed.second.varCoeffData) {
+            int indexUnk = getIndex(currentUnkSet, vc.first);
+            hMatrix(iobs, indexUnk) = vc.second;
+        }
+        wMatrix(iobs, iobs) = ed.second.weight;
+        iobs++;
+    }
+
+    MatrixXd hT = hMatrix.transpose();
+    covMatrix = (hT * wMatrix * hMatrix).inverse();
+    state = covMatrix * hT * wMatrix * prefit;
+
+    VectorXd v = hMatrix * state - prefit;
+    residuals = v;
+
+    if (numObs > numUnk) {
+        sigma0 = sqrt(
+            (v.transpose() * wMatrix * v)(0,0) / (numObs - numUnk)
+        );
+    } else {
+        sigma0 = 0.0;
+    }
+
+    MatrixXd I = MatrixXd::Identity(numObs, numObs);
+    MatrixXd hInv = covMatrix * hT * wMatrix;
+    cov_r = sigma0 * sigma0 * (I - hMatrix * hInv) * wMatrix.inverse();
+    W = wMatrix;
 }
 
 int SolverLSQ::getIndex(const VariableSet &varSet, const Variable &thisVar) {

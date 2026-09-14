@@ -36,10 +36,10 @@ int main() {
     
     // 配置 IF 组合类型：C1X + C5X
     std::map<string, std::pair<string, string>> ifCodeTypes = {
-        {"C", {"C1", "C5"}}  // BDS B1I + B2I 做 IF 组合
+        {"C", {"C2I", "C7I"}}  // BDS B1I + B2I 做 IF 组合
     };
     std::map<string, std::set<string>> selectedTypes = {
-        {"C", {"C1X", "C5X"}}  // 读取 BDS 的这些观测类型
+        {"C", {"C2I", "C7I"}}  // 读取 BDS 的这些观测类型
     };
     
     // 统计数据结构
@@ -83,8 +83,8 @@ int main() {
             if (stv.first.system == "C") {  // 只统计北斗卫星
                 const auto& types = stv.second;
                 // 检查是否有 C1X 和 C5X 观测值
-                bool hasC1X = (types.find("C1X") != types.end());
-                bool hasC5X = (types.find("C5X") != types.end());
+                bool hasC1X = (types.find("C2I") != types.end());
+                bool hasC5X = (types.find("C7I") != types.end());
                 
                 if (hasC1X && hasC5X) {
                     currentSats.push_back(stv.first);

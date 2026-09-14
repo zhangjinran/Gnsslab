@@ -84,7 +84,7 @@ void runBDSSPPWithWeights(const string& roverFile,
     std::cout << "Output -> " << solFile << std::endl;
 }
 
-// 运行北斗单系统的 SPPIF 测试（带权重参数，使用 C1XC5X 组合）
+// 运行北斗单系统的 SPPIF 测试（带权重参数，使用 C2I+C7I 组合）
 void runBDSSPPIFWithWeights(const string& roverFile, 
                             const string& navFile,
                             const string& outputPath,
@@ -92,9 +92,9 @@ void runBDSSPPIFWithWeights(const string& roverFile,
                             double igsoWeight,
                             double geoWeight) {
     
-    std::cout << "\n--- BDS SPPIF Test (C1XC5X) (MEO:" << meoWeight << ", IGSO:" << igsoWeight << ", GEO:" << geoWeight << ") ---" << std::endl;
+    std::cout << "\n--- BDS SPPIF Test (C2I+C7I) (MEO:" << meoWeight << ", IGSO:" << igsoWeight << ", GEO:" << geoWeight << ") ---" << std::endl;
     
-    // 构建输出文件名（格式：sppif_BDS_C1XC5X_Mxx_Ixx_Gxx.out）
+    // 构建输出文件名（格式：sppif_BDS_C2IC7I_Mxx_Ixx_Gxx.out）
     char weightStr[50];
     sprintf(weightStr, "_M%.2f_I%.2f_G%.2f", meoWeight, igsoWeight, geoWeight);
     std::string solFile = outputPath + "sppif_BDS_C1XC5X_weight" + std::string(weightStr) + ".out";
@@ -111,9 +111,9 @@ void runBDSSPPIFWithWeights(const string& roverFile,
     SPPIFCode sppif;
     sppif.setSatTypeWeights(meoWeight, igsoWeight, geoWeight);
     
-    // 配置 IF 组合：C1XC5X (B1C + B5A)
-    std::map<string, std::pair<string, string>> ifCodeTypes = {{"C", {"C1", "C5"}}};
-    std::map<string, std::set<string>> selectedTypes = {{"C", {"C1X", "C5X"}}};
+    // 配置 IF 组合：B1I(1561MHz) + B2I(1207MHz)
+    std::map<string, std::pair<string, string>> ifCodeTypes = {{"C", {"C2", "C7"}}};
+    std::map<string, std::set<string>> selectedTypes = {{"C", {"C2I", "C7I"}}};
     sppif.setSelectedTypes(selectedTypes);
     
     // 调用 full_solve 获取结果（TGD、对流层全部开启）
@@ -174,8 +174,8 @@ int main() {
     // // 测试用例8：GEO 权重设为 0（彻底排除 GEO）
     // runBDSSPPWithWeights(roverFile, navFile, outputPath, 1.0, 0.3, 0.0, sysTypes);
 
-    // ==================== SPPIF 测试（C1XC5X）====================
-    std::cout << "\n=== BDS SPPIF Weight Test (C1XC5X) ===" << std::endl;
+    // ==================== SPPIF 测试（C2I+C7I）====================
+    std::cout << "\n=== BDS SPPIF Weight Test (C2I+C7I) ===" << std::endl;
     
     // 设置 SPPIF 输出路径
     std::string outputPathIF = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/sppif_bds_weight/";

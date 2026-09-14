@@ -61,7 +61,9 @@ add_library( gnss SHARED ${DIR_LIB_SRCS}
         lib/DataExporter.h
         lib/DataExporter.cpp
         lib/OrbitExporter.h
-        lib/OrbitExporter.cpp)
+        lib/OrbitExporter.cpp
+        lib/QualityAnalyzer.h
+        lib/QualityAnalyzer.cpp)
     #DIR_LIB_SRCS是我们自己定义的变量。
 
 find_package(PCL REQUIRED)
@@ -138,6 +140,12 @@ target_link_libraries(bds_satweight_test gnss)
 #
 add_executable(spp_error_model_test examples/exam-5.6-spp-error-model-test.cpp)
 target_link_libraries(spp_error_model_test gnss)
+
+add_executable(sppif_error_model_test examples/exam-6.6-sppif-error-model-test.cpp)
+target_link_libraries(sppif_error_model_test gnss)
+
+add_executable(sppgf_error_model_test examples/exam-6.7-sppgf-error-model-test.cpp)
+target_link_libraries(sppgf_error_model_test gnss)
 #
 
 add_executable(sppif examples/exam-6.1-sppif.cpp)
@@ -154,6 +162,9 @@ target_link_libraries(sppif_bds_test gnss)
 #
 add_executable(bds_ifcode_stat examples/exam-6.5-bds_ifcode_stat.cpp)
 target_link_libraries(bds_ifcode_stat gnss)
+#
+add_executable(spp_velocity examples/exam-6.6-spp-velocity.cpp)
+target_link_libraries(spp_velocity gnss)
 #
 #add_executable(cs_detect_mw examples/exam-7.1-cs_detect_mw.cpp)
 #target_link_libraries(cs_detect_mw gnss)
@@ -173,5 +184,27 @@ target_link_libraries(test gnss)
 add_executable(diagnostic_bds examples/exam-diagnostic-bds.cpp)
 target_link_libraries(diagnostic_bds gnss)
 
+add_executable(diagnostic_iono examples/exam-diagnostic-iono.cpp)
+target_link_libraries(diagnostic_iono gnss)
+
+add_executable(diagnostic_tropo examples/exam-diagnostic-tropo.cpp)
+target_link_libraries(diagnostic_tropo gnss)
+
+add_executable(multi_spp examples/exam-6.7-multi-spp.cpp)
+target_link_libraries(multi_spp gnss)
+
+add_executable(multi_if examples/exam-6.8-multi-if.cpp)
+target_link_libraries(multi_if gnss)
+
+add_executable(multi_gf examples/exam-6.9-multi-gf.cpp)
+target_link_libraries(multi_gf gnss)
+
+add_executable(diagnostic_if examples/exam-diagnostic-if.cpp)
+target_link_libraries(diagnostic_if gnss)
+
 add_executable(bds_c2i_c7i_count examples/exam-bds-c2i-c7i-count.cpp)
 target_link_libraries(bds_c2i_c7i_count gnss)
+
+# 质量分析示例
+add_executable(quality_analysis examples/exam-quality-analysis.cpp)
+target_link_libraries(quality_analysis gnss)

@@ -32,6 +32,21 @@
 #include "RinexObsReader.h"
 #include <Eigen/Eigen>
 
+// 历元跳过统计（精简版）
+struct GFEpochSkipStats {
+    int totalEpochs = 0;
+    int svNumException = 0;
+    int pdopInvalid = 0;
+    int pdopExceed = 0;
+    int iterNotConverge = 0;
+    int sigma0Exceed = 0;
+    int satOutlierDeleted = 0;
+
+    int totalSkipped() const {
+        return svNumException + pdopInvalid + pdopExceed + iterNotConverge + sigma0Exceed;
+    }
+};
+
 class SPPGFCode {
 public:
     SPPGFCode()
@@ -48,6 +63,24 @@ public:
         pEphStore = pStore;
     };
 
+    void setSysTypes(const std::map<std::string, std::set<std::string>>& types_)
+    {
+        sysTypes = types_;
+    }
+
+    void setRelativityEnable(bool enable)
+    {
+        relativityEnable = enable;
+    }
+
+    void setEarthRotationEnable(bool enable)
+    {
+        earthRotationEnable = enable;
+    }
+
+    void resetEpochSkipStats() { gfEpochSkip = GFEpochSkipStats{}; }
+    void printEpochSkipStats(int totalEpochs = 0) const;
+    const GFEpochSkipStats& getEpochSkipStats() const { return gfEpochSkip; }
 
 
     void solve(ObsData &obsData,bool TGD_bool=true,bool Trop_Bool=true);
@@ -112,6 +145,12 @@ public:
         return xyz;
     }
 
+    double getPDOP() const { return result.pdop; }
+    double getSigma0() const { return sigma0Val; }
+    double getMeanResidual() const { return meanResidual; }
+    double getMaxResidual() const { return maxResidual; }
+    int getNSat() const { return result.numSats; }
+
     Result getResult();
 
     ~SPPGFCode(){};
@@ -123,6 +162,15 @@ protected:
     bool isRover;
     double sigGFCode;
 
+    std::map<std::string, std::set<std::string>> sysTypes;
+
+    // 粗差卫星降权集合（不删除，仅降权）
+    std::set<SatID> outlierSats;
+
+    double sigma0Val = 0.0;
+    double meanResidual = 0.0, maxResidual = 0.0;
+
+    GFEpochSkipStats gfEpochSkip;
 
     EquSys equSys;
     Result result;
@@ -140,6 +188,9 @@ protected:
     SolverLSQ  solverLsq;
 
     RinexNavStore* pEphStore;
+
+    bool relativityEnable = true;
+    bool earthRotationEnable = true;
 
     SatID datumSat;
 
