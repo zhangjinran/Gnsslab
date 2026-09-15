@@ -4,43 +4,83 @@
 #
 ###################################################################
 
-# Preserve the current source discovery strategy for Stage 3A-1.
-aux_source_directory(
-    ${PROJECT_SOURCE_DIR}/lib
-    DIR_LIB_SRCS
-)
+add_library(gnss SHARED)
 
-add_library(
+# Explicit manifest: every translation unit compiled into gnss, plus headers
+# shown in generated IDE projects.  Keep this list authoritative.
+target_sources(
     gnss
-    SHARED
+    PRIVATE
+        ARLambda.cpp
+        ConfigReader.cpp
+        CSDetector.cpp
+        DataExporter.cpp
+        GnssFunc.cpp
+        GnssStruct.cpp
+        KalmanFilter.cpp
+        NavEphBase.cpp
+        NavEphBDS.cpp
+        NavEphGalileo.cpp
+        NavEphGLONASS.cpp
+        NavEphGPS.cpp
+        NavEphIRNSS.cpp
+        NavEphQZSS.cpp
+        NavEphRegistry.cpp
+        OrbitExporter.cpp
+        QualityAnalyzer.cpp
+        RinexNavStore.cpp
+        RinexObsReader.cpp
+        Rx3ClockReader.cpp
+        SolverKalman.cpp
+        SolverLSQ.cpp
+        SP3Store.cpp
+        SPPCode.cpp
+        SPPGFCode.cpp
+        SPPIFCode.cpp
+        SPPUCCodePhase.cpp
+        Time2020Convert.cpp
+        TimeConvert.cpp
+        TimeStruct.cpp
+        write.cpp
 
-    ${DIR_LIB_SRCS}
-
-    ${PROJECT_SOURCE_DIR}/lib/Time2020Convert.h
-    ${PROJECT_SOURCE_DIR}/lib/Time2020Convert.cpp
-    ${PROJECT_SOURCE_DIR}/lib/write.h
-    ${PROJECT_SOURCE_DIR}/lib/write.cpp
-    ${PROJECT_SOURCE_DIR}/lib/SPPCode.h
-    ${PROJECT_SOURCE_DIR}/lib/SPPCode.cpp
-    ${PROJECT_SOURCE_DIR}/lib/SPPGFCode.cpp
-    ${PROJECT_SOURCE_DIR}/lib/SPPGFCode.h
-    ${PROJECT_SOURCE_DIR}/lib/NavEphGLONASS.hpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphGLONASS.cpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphBase.hpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphBase.cpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphRegistry.cpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphGalileo.hpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphGalileo.cpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphQZSS.hpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphQZSS.cpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphIRNSS.hpp
-    ${PROJECT_SOURCE_DIR}/lib/NavEphIRNSS.cpp
-    ${PROJECT_SOURCE_DIR}/lib/DataExporter.h
-    ${PROJECT_SOURCE_DIR}/lib/DataExporter.cpp
-    ${PROJECT_SOURCE_DIR}/lib/OrbitExporter.h
-    ${PROJECT_SOURCE_DIR}/lib/OrbitExporter.cpp
-    ${PROJECT_SOURCE_DIR}/lib/QualityAnalyzer.h
-    ${PROJECT_SOURCE_DIR}/lib/QualityAnalyzer.cpp
+        ARLambda.hpp
+        ConfigData.h
+        ConfigReader.h
+        Const.h
+        CoordConvert.h
+        CoordStruct.h
+        CSDetector.h
+        DataExporter.h
+        EphStore.h
+        Exception.h
+        GnssFunc.h
+        GnssStruct.h
+        KalmanFilter.hpp
+        MathUtils.hpp
+        NavEphBase.hpp
+        NavEphBDS.hpp
+        NavEphGalileo.hpp
+        NavEphGLONASS.hpp
+        NavEphGPS.hpp
+        NavEphIRNSS.hpp
+        NavEphQZSS.hpp
+        OrbitExporter.h
+        QualityAnalyzer.h
+        RinexNavStore.hpp
+        RinexObsReader.h
+        Rx3ClockReader.hpp
+        SolverKalman.h
+        SolverLSQ.h
+        SP3Store.hpp
+        SPPCode.h
+        SPPGFCode.h
+        SPPIFCode.h
+        SPPUCCodePhase.h
+        StringUtils.h
+        Time2020Convert.h
+        TimeConvert.h
+        TimeStruct.h
+        write.h
 )
 
 # Public because gnssLab headers and all consumers need these include paths.
