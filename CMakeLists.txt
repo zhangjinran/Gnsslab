@@ -28,7 +28,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 option(GNSSLAB_BUILD_EXAMPLES "Build gnssLab examples" ON)
 
-add_subdirectory(lib)
+add_subdirectory(src)
 
 if(GNSSLAB_BUILD_EXAMPLES)
     add_subdirectory(examples)
