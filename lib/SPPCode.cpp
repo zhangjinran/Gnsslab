@@ -21,6 +21,7 @@
 #include "SPPCode.h"
 #include "CoordConvert.h"
 #include <iostream>
+#include <numbers>
 #include "RinexObsReader.h"
 #include <Eigen/Eigen>
 
@@ -1132,14 +1133,14 @@ std::string SPPCode::getBDSSatType(const SatID& sat, CommonTime epoch)
         double a = eph.sqrt_A * eph.sqrt_A;
 
         // ===== 2. 倾角（rad）=====
-        double inc = std::fabs(eph.i0) * M_PI;
+        double inc = std::fabs(eph.i0) * std::numbers::pi;
         
         if (debug) {
             cout << "[getBDSSatType] Sat " << sat << ":" << endl;
             cout << "  sqrt_A: " << eph.sqrt_A << endl;
             cout << "  a (semi-major axis): " << a << " m" << endl;
             cout << "  i0 (semicircles): " << eph.i0 << endl;
-            cout << "  inc (rad): " << inc << " (" << inc * 180 / M_PI << " deg)" << endl;
+            cout << "  inc (rad): " << inc << " (" << inc * 180 / std::numbers::pi << " deg)" << endl;
         }
 
         // ===== 3. 第一层：MEO vs 同步轨道 =====

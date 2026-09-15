@@ -3,30 +3,23 @@
 #include "CoordConvert.h"
 #include <fstream>
 #include <iomanip>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <cstdlib>
+#include <filesystem>
 
 namespace gnss {
 
 std::string DataExporter::getOutputBasePath() {
-    return std::string(getenv("HOME")) + 
-           "/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/";
+    namespace fs = std::filesystem;
+
+    fs::path path = fs::current_path() / "outputs";
+    fs::create_directories(path);
+
+    return (path / "").string();
 }
 
 bool DataExporter::ensureDirectoryExists(const std::string& path) {
-#ifdef _WIN32
-    return CreateDirectory(path.c_str(), NULL) || 
-           GetLastError() == ERROR_ALREADY_EXISTS;
-#else
-    size_t pos = 0;
-    std::string temp = path;
-    while ((pos = temp.find('/', pos + 1)) != std::string::npos) {
-        std::string dir = temp.substr(0, pos);
-        mkdir(dir.c_str(), 0755);
-    }
-    return mkdir(path.c_str(), 0755) == 0 || errno == EEXIST;
-#endif
+    std::error_code error;
+    std::filesystem::create_directories(path, error);
+    return !error;
 }
 
 std::string DataExporter::getTimeSystemOutputPath(const std::string& subFolder) {
@@ -48,13 +41,15 @@ std::string DataExporter::getCoordSystemOutputPath(const std::string& subFolder)
 }
 
 std::string DataExporter::getFigureOutputPath(const std::string& subFolder) {
-    std::string path = std::string(getenv("HOME")) + 
-                       "/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/figure/";
+    namespace fs = std::filesystem;
+
+    fs::path path = fs::current_path() / "outputs" / "figures";
     if (!subFolder.empty()) {
-        path += subFolder + "/";
+        path /= subFolder;
     }
-    ensureDirectoryExists(path);
-    return path;
+    fs::create_directories(path);
+
+    return (path / "").string();
 }
 
 bool DataExporter::exportTimeConversionData(const CommonTime& gpsTime, 

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <numbers>
 #include <string>
 
 #include "DataExporter.h"
@@ -23,7 +24,7 @@ void polarToCartesian(double centerX, double centerY, double radius,
                       double& x, double& y) {
     const double elevMax = 90.0;
     double r = radius * (elevMax - elevationDeg) / elevMax;
-    double azimuthRad = azimuthDeg * M_PI / 180.0;
+    double azimuthRad = azimuthDeg * std::numbers::pi / 180.0;
     x = centerX + r * sin(azimuthRad);
     y = centerY - r * cos(azimuthRad);  // SVG坐标系Y轴向下
 }
@@ -59,7 +60,7 @@ void generateSkyplot(const std::vector<LocalSatellite>& satellites,
 
     // 绘制方位角射线（30度间隔）
     for (int az = 0; az < 360; az += 30) {
-        double rad = az * M_PI / 180.0;
+        double rad = az * std::numbers::pi / 180.0;
         double x = center + plotRadius * sin(rad);
         double y = center - plotRadius * cos(rad);
         svg << "<line x1=\"" << center << "\" y1=\"" << center

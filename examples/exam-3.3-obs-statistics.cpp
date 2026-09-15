@@ -13,6 +13,7 @@
 #include <vector>
 #include <iomanip>
 #include <algorithm>
+#include <filesystem>
 #include "GnssStruct.h"
 #include "TimeConvert.h"
 #include "GnssFunc.h"
@@ -34,11 +35,17 @@ std::map<std::string, std::string> sysNameMap = {
 };
 
 int main() {
+    namespace fs = std::filesystem;
+
+    const fs::path dataDir = fs::current_path() / "data";
+    const fs::path outputDir =
+        fs::current_path() / "outputs" / "obs_statistics_epoch";
+
     std::cout << "=== GNSS Observation Data Statistics (Epoch-based) ===" << std::endl;
     
     // 文件路径配置
-    string dirPath = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/";
-    std::string roverFile = dirPath + "WUH200CHN_R_20250010000_01D_30S_MO.rnx";
+    std::string roverFile =
+        (dataDir / "WUH200CHN_R_20250010000_01D_30S_MO.rnx").string();
     
     std::cout << "Rover file: " << roverFile << std::endl;
     
@@ -76,16 +83,15 @@ int main() {
     std::cout << "Approx Position: " << header.antennaPosition.transpose() << std::endl;
     
     // 创建输出目录
-    std::string outputPath = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/obs_statistics_epoch/";
-    std::string cmd = "mkdir -p " + outputPath;
-    system(cmd.c_str());
+    fs::create_directories(outputDir);
     
     // 为每个系统创建输出流
     std::map<std::string, std::fstream> sysStreams;
     std::map<std::string, std::vector<std::string>> sysObsTypeList;
     
     for (const auto& sys : allSystems) {
-        std::string fileName = outputPath + "obs_epoch_" + sys + ".txt";
+        std::string fileName =
+            (outputDir / ("obs_epoch_" + sys + ".txt")).string();
         sysStreams[sys].open(fileName, ios::out);
         if (!sysStreams[sys]) {
             std::cerr << "Error opening file: " << fileName << std::endl;
@@ -213,7 +219,7 @@ int main() {
     }
     
     std::cout << "\n=== Statistics completed ===" << std::endl;
-    std::cout << "Output directory: " << outputPath << std::endl;
+    std::cout << "Output directory: " << outputDir.string() << std::endl;
     
     return 0;
 }

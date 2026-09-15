@@ -23,8 +23,15 @@
 #include "SP3Store.hpp"
 #include "RinexNavStore.hpp"
 #include "GnssFunc.h"
+#include <filesystem>
 
 int main(int argc,char* argv[]) {
+    namespace fs = std::filesystem;
+
+    const fs::path dataDir = fs::current_path() / "data";
+    const fs::path outputDir = fs::current_path() / "outputs" / "gps_eph";
+    fs::create_directories(outputDir);
+
 
 
     CivilTime civilTimePrediced;
@@ -41,7 +48,8 @@ int main(int argc,char* argv[]) {
     CommonTime2MJD(stoptime,mjdPrediced);
     //cout << "epoch:" << ydsPrediced << endl;
 
-    std::string navfile="/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/BRDC00IGS_R_20250010000_01D_MN.rnx";
+    std::string navfile =
+        (dataDir / "BRDC00IGS_R_20250010000_01D_MN.rnx").string();
     RinexNavStore navStore;
     navStore.loadFile(navfile);
     
@@ -72,15 +80,16 @@ int main(int argc,char* argv[]) {
         }
     }
 
-    string sp3File = "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/COD0MGXFIN_20250010000_01D_05M_ORB.SP3";
+    string sp3File =
+        (dataDir / "COD0MGXFIN_20250010000_01D_05M_ORB.SP3").string();
     SP3Store sp3Store;
     sp3Store.loadSP3File(sp3File);
 
 
     navStore.getContrastData(sp3Store,predictedTime,stoptime,30);
 
-    navStore.writeFile("/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/output.txt","GPS");
-    navStore.writeFile("/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnss_draw/data/output2.txt","BDS");
+    navStore.writeFile((outputDir / "output.txt").string(), "GPS");
+    navStore.writeFile((outputDir / "output2.txt").string(), "BDS");
 
     
     // for (auto it:navStore.gpsEphData) {

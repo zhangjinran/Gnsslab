@@ -21,6 +21,9 @@ project(gnssLab VERSION 1.2)
 # "Debug" 表明，构建系统时给出中间过程提示
 set(CMAKE_BUILD_TYPE "Debug")
 set(CMAKE_CXX_STANDARD 20)
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
 
@@ -64,17 +67,13 @@ add_library( gnss SHARED ${DIR_LIB_SRCS}
         lib/OrbitExporter.cpp
         lib/QualityAnalyzer.h
         lib/QualityAnalyzer.cpp)
+
+if(MSVC)
+    set_target_properties(gnss PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+endif()
     #DIR_LIB_SRCS是我们自己定义的变量。
-
-find_package(PCL REQUIRED)
-include_directories(${PCL_INCLUDE_DIRS})
-
-find_package(VTK REQUIRED)
-include(${VTK_USE_FILE})
-
-target_link_libraries(gnss ${VTK_LIBRARIES})
-
-target_link_libraries(gnss ${OpenCV_LIBRARIES})   # 加上这一行
 
 # 创建可执行程序
 add_executable(parse_opt examples/exam-1.1-parse_opt.cpp)
@@ -120,7 +119,7 @@ add_executable(obs_statistics examples/exam-3.3-obs-statistics.cpp)
 target_link_libraries(obs_statistics gnss)
 #
 add_executable(gps_eph examples/exam-4.1-gps_eph.cpp)
-target_link_libraries(gps_eph gnss ${PCL_LIBRARIES})
+target_link_libraries(gps_eph gnss)
 #
 add_executable(system_bias examples/exam-5.1-system_bias.cpp)
 target_link_libraries(system_bias gnss)

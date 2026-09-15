@@ -39,6 +39,9 @@ logs/
 *.log
 *.out
 
+# Runtime-generated outputs
+/outputs/
+
 
 # ===================
 # Local documents

@@ -18,7 +18,6 @@
 #ifndef TimeStruct_H
 #define TimeStruct_H
 
-#include <sys/time.h>
 #include "Exception.h"
 #include <limits>
 #include <iomanip>
@@ -56,14 +55,7 @@ public:
     }
 
     // Constructor
-    TimeSystem(const std::string str) {
-        for (int i = 0; i < count; i++) {
-            if (sys_strings[i] == str) {
-                system = static_cast<SystemType>(i);
-                break;
-            }
-        }
-    }
+    TimeSystem(const std::string str);
 
     bool operator==(const TimeSystem &right) const {
         if (system == right.system)
@@ -76,12 +68,7 @@ public:
         return (!operator==(right));
     }
 
-    std::string toString() const {
-        std::ostringstream oss;
-        oss << sys_strings[static_cast<int>(system)];
-
-        return oss.str();
-    };
+    std::string toString() const;
 
     // time system
     SystemType system;

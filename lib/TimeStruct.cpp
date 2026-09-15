@@ -33,6 +33,21 @@ const string TimeSystem::sys_strings[count] = {
         "TT"
 };
 
+TimeSystem::TimeSystem(const std::string str) {
+    for (int i = 0; i < count; i++) {
+        if (sys_strings[i] == str) {
+            system = static_cast<SystemType>(i);
+            break;
+        }
+    }
+}
+
+std::string TimeSystem::toString() const {
+    std::ostringstream oss;
+    oss << sys_strings[static_cast<int>(system)];
+    return oss.str();
+}
+
 CivilTime &CivilTime::operator=(const CivilTime &right) {
     year = right.year;
     month = right.month;

@@ -23,18 +23,12 @@
 #include <map>
 #include <vector>
 #include <string>
-#include <fmt/core.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/visualization/cloud_viewer.h>
 #include <Eigen/Core>
 #include <map>
 #include <iostream>
 #include <filesystem>
 #include <thread>
 #include <chrono>
-#include <unistd.h>   // readlink
-#include <limits.h>   // PATH_MAX
 
 
 

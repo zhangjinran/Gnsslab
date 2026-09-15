@@ -3,6 +3,7 @@
 //
 #include <iostream>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <iomanip>
 #include <Eigen/Dense>
@@ -68,7 +69,7 @@ int main() {
 
     // ========== 测试4: 弧度/角度转换函数 ==========
     std::cout << "===== 弧度/角度转换函数测试 =====" << std::endl;
-    double rad = M_PI / 4; // 45度
+    double rad = std::numbers::pi / 4; // 45度
     double deg = rad2deg(rad);
     std::cout << rad << " 弧度 = " << deg << " 度" << std::endl;
     

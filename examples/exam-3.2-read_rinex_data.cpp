@@ -13,6 +13,7 @@
 #include <vector>
 #include <algorithm>
 #include <numeric>
+#include <filesystem>
 #include "GnssStruct.h"
 #include "TimeConvert.h"
 #include "GnssFunc.h"
@@ -32,7 +33,6 @@ extern void ensureNavEphRegistered();
 using namespace std;
 
 #define DEBUG_MODE true
-#define IRNSS_SELF_CHECK_OUTPUT "irnss_self_consistency_check.txt"
 
 void logInfo(const string& msg) {
     if (DEBUG_MODE) {
@@ -87,16 +87,19 @@ void compare(SatID sat, CommonTime epoch,SP3Store& sp3Store,RinexNavStore& navSt
 
 }
 
-void irnssSelfConsistencyCheck(RinexNavStore& navStore, const SatID& sat, const CommonTime& toe) {
+void irnssSelfConsistencyCheck(RinexNavStore& navStore, const SatID& sat,
+                               const CommonTime& toe,
+                               const std::filesystem::path& outputPath) {
     cout << "\n===== IRNSS Self-Consistency Check for " << sat << " =====" << endl;
     
     const double interval = 300.0; // 300秒间隔
     const double halfWindow = 30 * 60; // 前后30分钟
     const int numPoints = static_cast<int>(2 * halfWindow / interval) + 1;
     
-    ofstream outFile(IRNSS_SELF_CHECK_OUTPUT);
+    std::filesystem::create_directories(outputPath.parent_path());
+    ofstream outFile(outputPath);
     if (!outFile) {
-        cerr << "[ERROR] Cannot open output file: " << IRNSS_SELF_CHECK_OUTPUT << endl;
+        cerr << "[ERROR] Cannot open output file: " << outputPath.string() << endl;
         return;
     }
     
@@ -152,7 +155,7 @@ void irnssSelfConsistencyCheck(RinexNavStore& navStore, const SatID& sat, const 
     }
     
     outFile.close();
-    cout << "\n[INFO] Output written to: " << IRNSS_SELF_CHECK_OUTPUT << endl;
+    cout << "\n[INFO] Output written to: " << outputPath.string() << endl;
     
     // 分析结果
     if (radii.size() >= 2) {
@@ -242,8 +245,14 @@ void irnssSelfConsistencyCheck(RinexNavStore& navStore, const SatID& sat, const 
 
 int main()
 {
+    namespace fs = std::filesystem;
+    const fs::path dataDir = fs::current_path() / "data";
+    const fs::path selfCheckOutput =
+        fs::current_path() / "outputs" / "read_rinex_data" /
+        "irnss_self_consistency_check.txt";
+
     string obsFile =
-        "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/WUH200CHN_R_20250010000_01D_30S_MO.rnx";
+        (dataDir / "WUH200CHN_R_20250010000_01D_30S_MO.rnx").string();
 
     RinexObsReader obsReader;
     obsReader.loadFile(obsFile);
@@ -256,11 +265,13 @@ int main()
     RinexNavStore navStore;
 
     string navFile =
-        "/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/BRDC00IGS_R_20250010000_01D_MN.rnx";
+        (dataDir / "BRDC00IGS_R_20250010000_01D_MN.rnx").string();
 
     SP3Store sp3Store;
-    string sp3File ="/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/WUM0MGXFIN_20250010000_01D_05M_ORB.SP3";
-    string sp3File2 ="/home/zhang/Documents/大学课程/大二第二学期课程/卫星算法/gnssLab-2.4/data/COD0MGXFIN_20250010000_01D_05M_ORB.SP3";
+    string sp3File =
+        (dataDir / "WUM0MGXFIN_20250010000_01D_05M_ORB.SP3").string();
+    string sp3File2 =
+        (dataDir / "COD0MGXFIN_20250010000_01D_05M_ORB.SP3").string();
     sp3Store.loadSP3File(sp3File);
     sp3Store.loadSP3File(sp3File2);
 
@@ -366,7 +377,7 @@ int main()
             toeTime = CivilTime2CommonTime(irnssEph.CivilToc);
         }
         
-        irnssSelfConsistencyCheck(navStore, sat_IRNSS, toeTime);
+        irnssSelfConsistencyCheck(navStore, sat_IRNSS, toeTime, selfCheckOutput);
     } catch (const exception& e) {
         cerr << "[WARNING] Cannot perform IRNSS self-consistency check: " << e.what() << endl;
     }
