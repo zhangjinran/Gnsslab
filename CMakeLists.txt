@@ -150,9 +150,6 @@ target_link_libraries(sppgf_error_model_test gnss)
 add_executable(sppif examples/exam-6.1-sppif.cpp)
 target_link_libraries(sppif gnss)
 #
-add_executable(spp examples/exam-6.2-spp.cpp)
-target_link_libraries(spp gnss)
-#
 add_executable(sppUC examples/exam-6.3-GFCode.cpp)
 target_link_libraries(sppUC gnss)
 #
@@ -176,9 +173,6 @@ target_link_libraries(spp_velocity gnss)
 #
 #add_executable(rtk_kal examples/exam-8.5-rtk_kal.cpp)
 #target_link_libraries(rtk_kal gnss)
-
-add_executable(test examples/zuiyouguji/test.cpp lib/zuiyouguji/gnssfunc.cpp lib/zuiyouguji/gnssfunc.h)
-target_link_libraries(test gnss)
 
 add_executable(diagnostic_bds examples/exam-diagnostic-bds.cpp)
 target_link_libraries(diagnostic_bds gnss)
